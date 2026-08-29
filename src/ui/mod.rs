@@ -323,7 +323,7 @@ mod tests {
         assert!(text.contains("CODEX"));
         assert!(text.contains("OPENCODE"));
         assert!(text.contains("ANTIGRAVITY"));
-        assert!(text.contains("████"));
+        assert!(text.contains("▓▓▓▓"));
         assert!(text.contains("65%"));
         assert!(text.contains("312.3M tokens"));
         assert!(text.contains("remaining"));
