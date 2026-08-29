@@ -9,10 +9,14 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::Modifier,
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, List, Paragraph},
 };
 
-use crate::{app::App, model::ProviderId};
+use crate::{
+    app::{App, UpdateAction},
+    model::ProviderId,
+    updater::AvailableUpdate,
+};
 
 use theme::Theme;
 
@@ -270,7 +274,14 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
             }
             Density::Normal => mode,
         };
-        frame.render_widget(footer(footer_mode, theme), areas[footer_index]);
+        frame.render_widget(
+            footer(footer_mode, app.available_update(), theme),
+            areas[footer_index],
+        );
+    }
+
+    if app.is_update_modal_open() {
+        render_update_modal(frame, app, theme);
     }
 }
 
@@ -289,7 +300,48 @@ fn header(theme: Theme) -> Paragraph<'static> {
     Paragraph::new(lines) // left-aligned; centered as a block in render()
 }
 
-fn footer(mode: LayoutMode, theme: Theme) -> Paragraph<'static> {
+fn footer(
+    mode: LayoutMode,
+    available_update: Option<&AvailableUpdate>,
+    theme: Theme,
+) -> Paragraph<'static> {
+    if let Some(update) = available_update {
+        let update_spans = || {
+            vec![
+                Span::styled("[u]", theme.warning()),
+                Span::styled(" update ", theme.secondary()),
+                Span::styled(format!("v{}", update.version), theme.warning()),
+            ]
+        };
+        let mut spans = match mode {
+            LayoutMode::Wide => vec![
+                Span::styled("[j/k/↑/↓]", theme.primary()),
+                Span::styled(" select   ", theme.secondary()),
+                Span::styled("[Space/Enter]", theme.primary()),
+                Span::styled(" collapse   ", theme.secondary()),
+                Span::styled("[r]", theme.primary()),
+                Span::styled(" refresh   ", theme.secondary()),
+                Span::styled("[q]", theme.primary()),
+                Span::styled(" quit   ", theme.secondary()),
+            ],
+            LayoutMode::Compact => vec![
+                Span::styled("[j/k/↑/↓]", theme.primary()),
+                Span::styled(" select  ", theme.secondary()),
+                Span::styled("[r]", theme.primary()),
+                Span::styled(" refresh  ", theme.secondary()),
+            ],
+            LayoutMode::Narrow => Vec::new(),
+        };
+        spans.extend(update_spans());
+        if mode != LayoutMode::Wide {
+            spans.extend([
+                Span::styled("  [q]", theme.primary()),
+                Span::styled(" quit", theme.secondary()),
+            ]);
+        }
+        return Paragraph::new(Line::from(spans)).alignment(Alignment::Center);
+    }
+
     let spans = match mode {
         LayoutMode::Wide => vec![
             Span::styled("[j/k/↑/↓]", theme.primary()),
@@ -326,17 +378,77 @@ fn footer(mode: LayoutMode, theme: Theme) -> Paragraph<'static> {
     Paragraph::new(Line::from(spans)).alignment(Alignment::Center)
 }
 
+fn centered_rect(area: Rect, max_width: u16, max_height: u16) -> Rect {
+    let width = area.width.min(max_width);
+    let height = area.height.min(max_height);
+    Rect::new(
+        area.x + area.width.saturating_sub(width) / 2,
+        area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    )
+}
+
+fn render_update_modal(frame: &mut Frame, app: &App, theme: Theme) {
+    let Some(update) = app.available_update() else {
+        return;
+    };
+    let area = centered_rect(frame.area(), 56, 11);
+    let selected = app.selected_update_action();
+    let mut lines = vec![
+        Line::from(Span::styled(
+            format!("Current version: v{}", env!("CARGO_PKG_VERSION")),
+            theme.secondary(),
+        )),
+        Line::from(Span::styled(
+            format!("Latest version: v{}", update.version),
+            theme.warning(),
+        )),
+        Line::default(),
+    ];
+    lines.extend(UpdateAction::ALL.map(|action| {
+        let style = if action == selected {
+            theme.warning().add_modifier(Modifier::REVERSED)
+        } else {
+            theme.secondary()
+        };
+        Line::from(Span::styled(format!("  {}", action.label()), style))
+    }));
+    lines.extend([
+        Line::default(),
+        Line::from(Span::styled(
+            "j/k or arrows - Enter - Esc/q",
+            theme.secondary(),
+        )),
+    ]);
+
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        List::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(theme.warning())
+                .title(Span::styled(" Update available ", theme.warning())),
+        ),
+        area,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
     use ratatui::{Terminal, backend::TestBackend};
+    use semver::Version;
+    use url::Url;
 
     use crate::{
         app::App,
         model::{ProviderId, ProviderSnapshot, QuotaWindow, UsageStat, UsageValue},
         providers::ProviderError,
         ui::theme::{ColorMode, Theme},
+        updater::AvailableUpdate,
     };
 
     fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
@@ -452,16 +564,83 @@ mod tests {
         app
     }
 
-    fn render_ready(width: u16, height: u16, now: DateTime<Utc>) -> String {
+    fn with_update(mut app: App) -> App {
+        app.finish_update_check(Ok(Some(AvailableUpdate {
+            version: Version::parse("0.3.0").unwrap(),
+            release_url: Url::parse(
+                "https://github.com/Morfusee/subtracker-cli/releases/tag/v0.3.0",
+            )
+            .unwrap(),
+        })));
+        app
+    }
+
+    fn render_app(app: App, width: u16, height: u16, now: DateTime<Utc>) -> String {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
-        let app = ready_app(now);
 
         terminal
             .draw(|frame| render(frame, &app, now, 0, Theme::new(ColorMode::None)))
             .unwrap();
 
         buffer_text(&terminal)
+    }
+
+    fn render_ready(width: u16, height: u16, now: DateTime<Utc>) -> String {
+        render_app(ready_app(now), width, height, now)
+    }
+
+    #[test]
+    fn update_prompt_is_visible_and_prioritized_responsively() {
+        let now = Utc.timestamp_opt(1_788_000_000, 0).single().unwrap();
+        let wide = render_app(with_update(ready_app(now)), 120, 50, now);
+        assert!(wide.contains("[u] update v0.3.0"));
+        assert!(wide.contains("[r] refresh"));
+
+        let compact = render_app(with_update(ready_app(now)), 80, 42, now);
+        assert!(compact.contains("[j/k/↑/↓] select"));
+        assert!(compact.contains("[r] refresh"));
+        assert!(compact.contains("[u] update v0.3.0"));
+        assert!(compact.contains("[q] quit"));
+        assert!(!compact.contains("[Space/Enter]"));
+
+        let narrow = render_app(with_update(ready_app(now)), 65, 42, now);
+        assert!(narrow.contains("[u] update v0.3.0"));
+        assert!(narrow.contains("[q] quit"));
+        assert!(!narrow.contains("[Space] toggle"));
+    }
+
+    #[test]
+    fn dismissed_update_restores_the_original_dashboard() {
+        let now = Utc.timestamp_opt(1_788_000_000, 0).single().unwrap();
+        let expected = render_app(ready_app(now), 65, 42, now);
+        let mut app = with_update(ready_app(now));
+        app.dismiss_update();
+
+        assert_eq!(render_app(app, 65, 42, now), expected);
+    }
+
+    #[test]
+    fn update_modal_renders_actions_and_clamps_to_frame() {
+        let now = Utc.timestamp_opt(1_788_000_000, 0).single().unwrap();
+        let mut app = with_update(ready_app(now));
+        app.open_update_modal();
+        let text = render_app(app, 50, 15, now);
+        for expected in [
+            "Update available",
+            "Current version: v0.2.0",
+            "Latest version: v0.3.0",
+            "Update now",
+            "View release notes",
+            "Remind later",
+            "j/k or arrows - Enter - Esc/q",
+        ] {
+            assert!(text.contains(expected));
+        }
+        assert_eq!(
+            centered_rect(Rect::new(0, 0, 50, 15), 56, 11),
+            Rect::new(0, 2, 50, 11)
+        );
     }
 
     #[test]
