@@ -124,7 +124,11 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
     for (card_index, area_index) in [(0, offset), (1, offset + 2), (2, offset + 4)] {
         let (id, lines) = &cards[card_index];
 
-        let title = Line::from(Span::styled(id.display_name(), theme.provider_title(*id)));
+        let title = Line::from(vec![
+            Span::raw("──  "),
+            Span::styled(id.display_name(), theme.provider_title(*id)),
+            Span::raw("  "),
+        ]);
 
         let block = Block::default()
             .borders(Borders::ALL)
