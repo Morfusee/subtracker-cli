@@ -4,6 +4,7 @@ use thiserror::Error;
 use crate::model::{ProviderId, ProviderSnapshot};
 
 pub mod codex;
+pub mod opencode;
 pub mod process;
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
