@@ -43,93 +43,178 @@ impl LayoutMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Density {
+    Normal,
+    Compact,
+    Spaced,
+    Dense,
+}
+
+impl Density {
+    pub const CANDIDATES: [Self; 4] = [Self::Normal, Self::Compact, Self::Spaced, Self::Dense];
+
+    pub const fn card_padding(self) -> u16 {
+        match self {
+            Self::Normal => 3,
+            Self::Compact | Self::Spaced => 2,
+            Self::Dense => 1,
+        }
+    }
+
+    pub const fn gap(self) -> u16 {
+        match self {
+            Self::Normal | Self::Compact | Self::Spaced => 1,
+            Self::Dense => 0,
+        }
+    }
+
+    pub const fn show_header(self) -> bool {
+        match self {
+            Self::Normal | Self::Compact => true,
+            Self::Spaced | Self::Dense => false,
+        }
+    }
+}
+
+struct DashboardLayout {
+    density: Density,
+    content_width: u16,
+    cards: [(ProviderId, Vec<Line<'static>>); 3],
+    heights: [u16; 3],
+    show_header: bool,
+    required_height: u16,
+}
+
+impl DashboardLayout {
+    fn new(
+        app: &App,
+        area: Rect,
+        mode: LayoutMode,
+        density: Density,
+        theme: Theme,
+        now: DateTime<Utc>,
+        spinner_frame: u8,
+    ) -> Self {
+        let content_width = area.width.min(120);
+        let inner_width = content_width.saturating_sub(2 + density.card_padding() * 2);
+        let cards = ProviderId::ALL.map(|id| {
+            (
+                id,
+                provider_card::content_lines(
+                    id,
+                    app.provider(id),
+                    mode,
+                    inner_width,
+                    density,
+                    theme,
+                    now,
+                    spinner_frame,
+                ),
+            )
+        });
+        let heights = cards.each_ref().map(|(_, lines)| {
+            u16::try_from(lines.len())
+                .unwrap_or(u16::MAX)
+                .saturating_add(2)
+        });
+        let gaps = match density {
+            Density::Normal => 4,  // 1 below header + 2 between cards + 1 before footer
+            Density::Compact => 3, // 1 below header + 2 between cards
+            Density::Spaced => 3,  // 2 between cards + 1 before footer
+            Density::Dense => 0,
+        };
+        let cards_height = heights
+            .iter()
+            .copied()
+            .fold(0u16, u16::saturating_add)
+            .saturating_add(gaps)
+            .saturating_add(1);
+        let show_header = density.show_header();
+        let header_height = if show_header { 6 } else { 0 };
+        let required_height = cards_height.saturating_add(header_height);
+
+        Self {
+            density,
+            content_width,
+            cards,
+            heights,
+            show_header,
+            required_height,
+        }
+    }
+
+    fn fits(&self, area: Rect) -> bool {
+        self.content_width <= area.width && self.required_height <= area.height
+    }
+}
+
 pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u8, theme: Theme) {
     let area = frame.area();
 
     let mode = LayoutMode::for_width(area.width);
-    let content_width = area.width.min(120);
-    let inner_width = content_width.saturating_sub(8);
+    let mut layouts = Density::CANDIDATES
+        .map(|density| DashboardLayout::new(app, area, mode, density, theme, now, spinner_frame));
+    let selected = layouts
+        .iter()
+        .position(|layout| layout.fits(area))
+        .unwrap_or(layouts.len() - 1);
+    let layout = &mut layouts[selected];
 
-    let cards = ProviderId::ALL.map(|id| {
-        let lines = provider_card::content_lines(
-            id,
-            app.provider(id),
-            mode,
-            inner_width,
-            theme,
-            now,
-            spinner_frame,
-        );
-        (id, lines)
-    });
-
-    let heights = cards.each_ref().map(|(_, lines)| {
-        u16::try_from(lines.len())
-            .unwrap_or(u16::MAX)
-            .saturating_add(2)
-    });
-
-    let cards_required_height = heights
-        .into_iter()
-        .fold(0u16, u16::saturating_add)
-        .saturating_add(3) // three one-row gaps (between cards + before footer)
-        .saturating_add(1); // footer
-
-    let show_header = area.height >= cards_required_height.saturating_add(7);
-    let mut total_required_height = if show_header {
-        cards_required_height.saturating_add(7)
-    } else {
-        cards_required_height
-    };
-    // ponytail: never block rendering – clamp to visible area so small terminals still show something
-    total_required_height = total_required_height.min(area.height);
-
-    let h_offset = (area.width.saturating_sub(content_width)) / 2;
+    let total_required_height = layout.required_height.min(area.height);
+    let h_offset = (area.width.saturating_sub(layout.content_width)) / 2;
     let v_offset = (area.height.saturating_sub(total_required_height)) / 2;
 
     let centered_area = Rect {
         x: area.x + h_offset,
         y: area.y + v_offset,
-        width: content_width,
+        width: layout.content_width,
         height: total_required_height,
     };
 
     let mut constraints = Vec::new();
-    if show_header {
-        constraints.push(Constraint::Length(6)); // 0: Header
-        constraints.push(Constraint::Length(1)); // 1: Gap
+    if layout.show_header {
+        constraints.push(Constraint::Length(6));
+        if layout.density.gap() > 0 {
+            constraints.push(Constraint::Length(1)); // Gap below logo
+        }
     }
-    constraints.push(Constraint::Length(heights[0])); // Card 0
-    constraints.push(Constraint::Length(1)); // Gap
-    constraints.push(Constraint::Length(heights[1])); // Card 1
-    constraints.push(Constraint::Length(1)); // Gap
-    constraints.push(Constraint::Length(heights[2])); // Card 2
-    constraints.push(Constraint::Length(1)); // Gap
-    constraints.push(Constraint::Length(1)); // Footer
+
+    let mut card_indices = [0usize; 3];
+    for (index, height) in layout.heights.iter().copied().enumerate() {
+        card_indices[index] = constraints.len();
+        constraints.push(Constraint::Length(height));
+        if layout.density.gap() > 0 && index + 1 < layout.heights.len() {
+            constraints.push(Constraint::Length(layout.density.gap()));
+        }
+    }
+    if layout.density == Density::Normal || layout.density == Density::Spaced {
+        constraints.push(Constraint::Length(1)); // Gap before footer
+    }
+    let footer_index = constraints.len();
+    constraints.push(Constraint::Length(1));
 
     let areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
         .split(centered_area);
 
-    let offset = if show_header {
-        let header_area = areas[0];
+    if layout.show_header && !areas.is_empty() {
         let logo_width: u16 = 25;
-        let x = header_area.x + header_area.width.saturating_sub(logo_width) / 2;
         let logo_area = Rect {
-            x,
-            y: header_area.y,
-            width: logo_width,
-            height: 6,
+            x: areas[0].x + areas[0].width.saturating_sub(logo_width) / 2,
+            y: areas[0].y,
+            width: logo_width.min(areas[0].width),
+            height: 6.min(areas[0].height),
         };
         frame.render_widget(header(theme), logo_area);
-        2
-    } else {
-        0
-    };
+    }
 
-    for (card_index, area_index) in [(0, offset), (1, offset + 2), (2, offset + 4)] {
-        let (id, lines) = &cards[card_index];
+    for (card_index, &area_index) in card_indices.iter().enumerate() {
+        if area_index >= areas.len() {
+            continue;
+        }
+        let (id, lines) = &layout.cards[card_index];
         let provider_state = app.provider(*id);
 
         let top_title = Line::from(vec![
@@ -142,7 +227,9 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(theme.provider_border(*id))
-            .padding(ratatui::widgets::Padding::horizontal(3))
+            .padding(ratatui::widgets::Padding::horizontal(
+                layout.density.card_padding(),
+            ))
             .title(top_title);
 
         if let Some(status) =
@@ -157,7 +244,20 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
         );
     }
 
-    frame.render_widget(footer(mode, theme), areas[offset + 6]);
+    if footer_index < areas.len() {
+        let footer_mode = match layout.density {
+            Density::Dense => LayoutMode::Narrow,
+            Density::Compact | Density::Spaced => {
+                if mode == LayoutMode::Wide {
+                    LayoutMode::Compact
+                } else {
+                    mode
+                }
+            }
+            Density::Normal => mode,
+        };
+        frame.render_widget(footer(footer_mode, theme), areas[footer_index]);
+    }
 }
 
 fn header(theme: Theme) -> Paragraph<'static> {
@@ -334,6 +434,79 @@ mod tests {
         app
     }
 
+    fn render_ready(width: u16, height: u16, now: DateTime<Utc>) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let app = ready_app(now);
+
+        terminal
+            .draw(|frame| render(frame, &app, now, 0, Theme::new(ColorMode::None)))
+            .unwrap();
+
+        buffer_text(&terminal)
+    }
+
+    #[test]
+    fn height_constrained_dashboard_keeps_all_provider_data() {
+        let now = Utc.timestamp_opt(1_788_000_000, 0).single().unwrap();
+        let text = render_ready(120, 31, now);
+
+        for expected in [
+            "CODEX",
+            "OPENCODE",
+            "ANTIGRAVITY",
+            "5 hour",
+            "Weekly",
+            "Sessions",
+            "Total Cost",
+            "Input",
+            "Output",
+            "Gemini 5 hour",
+            "Gemini weekly",
+            "Claude/GPT 5 hour",
+            "Claude/GPT weekly",
+        ] {
+            assert!(text.contains(expected), "missing {expected:?}");
+        }
+    }
+
+    #[test]
+    fn constrained_dashboard_uses_full_area_and_keeps_all_provider_data() {
+        let now = Utc.timestamp_opt(1_788_000_000, 0).single().unwrap();
+        let text = render_ready(68, 31, now);
+
+        for expected in ["CODEX", "OPENCODE", "ANTIGRAVITY", "65%", "312.3M tokens"] {
+            assert!(text.contains(expected), "missing {expected:?}");
+        }
+        assert!(!text.contains("Terminal too small"));
+    }
+
+    #[test]
+    fn logo_is_present_on_standard_height_and_hidden_on_narrow_height() {
+        let now = Utc.timestamp_opt(1_788_000_000, 0).single().unwrap();
+        // Height >= 28 renders logo with full element spacing
+        for (w, h) in [(120, 32), (80, 28)] {
+            let text = render_ready(w, h, now);
+            assert!(text.contains("███████╗"), "logo must be present at {w}x{h}");
+            assert!(
+                text.contains("CODEX") && text.contains("OPENCODE") && text.contains("ANTIGRAVITY"),
+                "all cards must be present at {w}x{h}"
+            );
+        }
+
+        // Narrow heights (e.g. 24 or 20 rows) hide logo to preserve breathing room between elements
+        for (w, h) in [(80, 24), (65, 20)] {
+            let narrow_text = render_ready(w, h, now);
+            assert!(
+                !narrow_text.contains("███████╗"),
+                "logo must be hidden at {w}x{h} to preserve spacing"
+            );
+            for card in ["CODEX", "OPENCODE", "ANTIGRAVITY"] {
+                assert!(narrow_text.contains(card), "missing {card} at {w}x{h}");
+            }
+        }
+    }
+
     #[test]
     fn layout_breakpoints_match_the_design() {
         assert_eq!(LayoutMode::for_width(69), LayoutMode::Narrow);
@@ -345,7 +518,7 @@ mod tests {
     #[test]
     fn wide_dashboard_has_three_cards_bars_stats_and_full_footer() {
         let now = Utc.timestamp_opt(1_788_000_000, 0).single().unwrap();
-        let backend = TestBackend::new(120, 32);
+        let backend = TestBackend::new(120, 50);
         let mut terminal = Terminal::new(backend).unwrap();
         let app = ready_app(now);
 
@@ -490,6 +663,8 @@ mod tests {
 
         // ponytail: no hindrance – small terminals still render dashboard, not a blocking message
         assert!(!text.contains("Terminal too small"));
-        assert!(text.contains("CODEX") || text.contains("OPENCODE") || text.contains("ANTIGRAVITY"));
+        assert!(
+            text.contains("CODEX") || text.contains("OPENCODE") || text.contains("ANTIGRAVITY")
+        );
     }
 }

@@ -34,10 +34,11 @@ impl QuotaBar {
         let health_style = theme.quota(remaining);
 
         vec![
+            Span::styled("│", theme.empty_bar()),
             Span::styled("▓".repeat(usize::from(geometry.filled)), health_style),
             Span::styled("░".repeat(usize::from(geometry.empty)), theme.empty_bar()),
-            Span::raw("  "),
-            Span::styled(format!("{remaining:>3.0}%"), health_style),
+            Span::styled("│", theme.empty_bar()),
+            Span::styled(format!(" {remaining:>3.0}%"), health_style),
         ]
     }
 }
@@ -106,6 +107,6 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
-        assert_eq!(plain, "▓▓▓▓▓▓▓░░░   65%");
+        assert_eq!(plain, "│▓▓▓▓▓▓▓░░░│  65%");
     }
 }
