@@ -46,7 +46,7 @@ pub fn content_lines(
             if !snapshot.quotas.is_empty() {
                 quota_lines(snapshot, mode, inner_width, theme, now)
             } else {
-                open_code_lines(snapshot, mode, theme)
+                open_code_lines(snapshot, mode, inner_width, theme)
             }
         }
     }
@@ -111,59 +111,63 @@ fn quota_lines(
 
     lines.push(Line::from("")); // Top interior padding
 
-    for quota in &snapshot.quotas {
-        let Some(remaining) = quota.remaining_percent else {
-            continue;
-        };
+    // ponytail: Grid for Compact, padded flex-col/row for all modes so items not elbow-to-elbow
+    let mut compact_quotas: Vec<&crate::model::QuotaWindow> = Vec::new();
+    let filtered: Vec<&crate::model::QuotaWindow> = snapshot
+        .quotas
+        .iter()
+        .filter(|q| q.remaining_percent.is_some())
+        .collect();
+
+    for (q_idx, quota) in filtered.iter().enumerate() {
+        let remaining = quota.remaining_percent.expect("filtered");
+        let is_last = q_idx + 1 == filtered.len();
 
         match mode {
-            LayoutMode::Wide | LayoutMode::Compact => {
-                let label_width = match mode {
-                    LayoutMode::Wide => 20,
-                    LayoutMode::Compact => 18,
-                    LayoutMode::Narrow => unreachable!(),
-                };
-                let bar_width = match mode {
-                    LayoutMode::Wide => 20,
-                    LayoutMode::Compact => 12,
-                    LayoutMode::Narrow => unreachable!(),
-                };
-
-                let mut spans = vec![
-                    Span::raw("    "),
-                    Span::styled(
-                        format!("{:<width$}", quota.label, width = label_width),
-                        theme.primary(),
-                    ),
-                ];
-
-                spans.extend(QuotaBar::new(remaining).spans(bar_width, theme));
-
-                if mode == LayoutMode::Wide {
-                    spans.push(Span::styled("  remaining", theme.secondary()));
-                }
-
+            LayoutMode::Wide => {
+                // flex-row label+bar on first line, time under bar on second; bar expands to fill service box
+                let label_w: u16 = 20;
+                let gap: u16 = 2;
+                let bar_width = inner_width.saturating_sub(33).clamp(20, 80);
+                let mut first: Vec<Span<'static>> = Vec::new();
+                first.push(Span::raw("    "));
+                first.push(Span::styled(
+                    format!("{:<width$}", quota.label, width = label_w as usize),
+                    theme.primary(),
+                ));
+                first.push(Span::raw(" ".repeat(gap as usize)));
+                first.extend(QuotaBar::new(remaining).spans(bar_width, theme));
+                first.push(Span::raw(" "));
+                lines.push(Line::from(first));
                 if let Some(reset) = quota.resets_at {
-                    spans.push(Span::styled(
-                        format!("   ◷ {}", format_reset(reset, now)),
+                    let mut second: Vec<Span<'static>> = Vec::new();
+                    second.push(Span::raw("    "));
+                    second.push(Span::raw(" ".repeat(label_w as usize)));
+                    second.push(Span::raw(" ".repeat(gap as usize)));
+                    second.push(Span::styled(
+                        format!("◷ {}", format_reset(reset, now)),
                         theme.secondary(),
                     ));
+                    lines.push(Line::from(second));
                 }
-
-                lines.push(Line::from(spans));
+                if !is_last {
+                    lines.push(Line::from(""));
+                }
+            }
+            LayoutMode::Compact => {
+                compact_quotas.push(quota);
             }
             LayoutMode::Narrow => {
                 lines.push(Line::from(vec![
                     Span::raw("    "),
                     Span::styled(quota.label.clone(), theme.primary()),
+                    Span::raw(" "),
                 ]));
-
                 let bar_width = inner_width.saturating_sub(18).clamp(8, 24);
-
                 let mut bar_spans = vec![Span::raw("    ")];
                 bar_spans.extend(QuotaBar::new(remaining).spans(bar_width, theme));
+                bar_spans.push(Span::raw(" "));
                 lines.push(Line::from(bar_spans));
-
                 if let Some(reset) = quota.resets_at {
                     lines.push(Line::from(vec![
                         Span::raw("    "),
@@ -171,8 +175,129 @@ fn quota_lines(
                             format!("resets in {}", format_reset(reset, now)),
                             theme.secondary(),
                         ),
+                        Span::raw(" "),
                     ]));
                 }
+                if !is_last {
+                    lines.push(Line::from(""));
+                }
+            }
+        }
+    }
+
+    if !compact_quotas.is_empty() {
+        // Grid: auto-fit columns that expand to fill inner_width, with padding around each item
+        let gap: u16 = 6; // increased from 4 for breathing room
+        let cell_pad: u16 = 1; // 1 char padding on each side of a cell (elbow room)
+        let min_item: u16 = 26;
+        let n = compact_quotas.len() as u16;
+        let mut cols = ((inner_width + gap) / (min_item + gap)).max(1).min(n).min(3);
+        if cols == 0 {
+            cols = 1;
+        }
+        let cols_usize = cols as usize;
+        let col_width = (inner_width.saturating_sub(gap * (cols - 1))) / cols;
+        let content_width = col_width.saturating_sub(cell_pad * 2);
+        // generate grid row by row
+        for (row_idx, chunk) in compact_quotas.chunks(cols_usize).enumerate() {
+            // label row (with cell padding)
+            let mut label_spans: Vec<Span<'static>> = Vec::new();
+            for (i, quota) in chunk.iter().enumerate() {
+                if i > 0 {
+                    label_spans.push(Span::raw(" ".repeat(gap as usize)));
+                }
+                // left cell padding
+                label_spans.push(Span::raw(" ".repeat(cell_pad as usize)));
+                let label = quota.label.clone();
+                let display = if (label.chars().count() as u16) > content_width {
+                    let mut s = String::new();
+                    for (idx, ch) in label.chars().enumerate() {
+                        if (idx as u16) >= content_width.saturating_sub(1) {
+                            s.push('…');
+                            break;
+                        }
+                        s.push(ch);
+                    }
+                    s
+                } else {
+                    label
+                };
+                let pad = content_width.saturating_sub(display.chars().count() as u16);
+                label_spans.push(Span::styled(display, theme.primary()));
+                if pad > 0 {
+                    label_spans.push(Span::raw(" ".repeat(pad as usize)));
+                }
+                // right cell padding
+                label_spans.push(Span::raw(" ".repeat(cell_pad as usize)));
+            }
+            let remaining_cols = cols_usize.saturating_sub(chunk.len());
+            if remaining_cols > 0 {
+                let fill = remaining_cols as u16 * col_width + remaining_cols as u16 * gap;
+                label_spans.push(Span::raw(" ".repeat(fill as usize)));
+            }
+            lines.push(Line::from(label_spans));
+
+            // bar row (with cell padding)
+            let mut bar_spans: Vec<Span<'static>> = Vec::new();
+            for (i, quota) in chunk.iter().enumerate() {
+                if i > 0 {
+                    bar_spans.push(Span::raw(" ".repeat(gap as usize)));
+                }
+                bar_spans.push(Span::raw(" ".repeat(cell_pad as usize)));
+                let remaining = quota.remaining_percent.unwrap_or(0.0);
+                let bar_w = content_width.saturating_sub(7).clamp(8, 20);
+                let spans = QuotaBar::new(remaining).spans(bar_w, theme);
+                let w: u16 = spans.iter().map(|s| s.width() as u16).sum();
+                let pad = content_width.saturating_sub(w);
+                bar_spans.extend(spans);
+                if pad > 0 {
+                    bar_spans.push(Span::raw(" ".repeat(pad as usize)));
+                }
+                bar_spans.push(Span::raw(" ".repeat(cell_pad as usize)));
+            }
+            if remaining_cols > 0 {
+                let fill = remaining_cols as u16 * col_width + remaining_cols as u16 * gap;
+                bar_spans.push(Span::raw(" ".repeat(fill as usize)));
+            }
+            lines.push(Line::from(bar_spans));
+
+            // reset row (with cell padding)
+            let mut reset_spans: Vec<Span<'static>> = Vec::new();
+            let mut has_reset = false;
+            for (i, quota) in chunk.iter().enumerate() {
+                if i > 0 {
+                    reset_spans.push(Span::raw(" ".repeat(gap as usize)));
+                }
+                reset_spans.push(Span::raw(" ".repeat(cell_pad as usize)));
+                if let Some(reset) = quota.resets_at {
+                    has_reset = true;
+                    let txt = format!("◷ {}", format_reset(reset, now));
+                    let display = if (txt.chars().count() as u16) > content_width {
+                        txt.chars().take(content_width as usize - 1).collect::<String>() + "…"
+                    } else {
+                        txt
+                    };
+                    let pad = content_width.saturating_sub(display.chars().count() as u16);
+                    reset_spans.push(Span::styled(display, theme.secondary()));
+                    if pad > 0 {
+                        reset_spans.push(Span::raw(" ".repeat(pad as usize)));
+                    }
+                } else {
+                    reset_spans.push(Span::raw(" ".repeat(content_width as usize)));
+                }
+                reset_spans.push(Span::raw(" ".repeat(cell_pad as usize)));
+            }
+            if has_reset {
+                if remaining_cols > 0 {
+                    let fill = remaining_cols as u16 * col_width + remaining_cols as u16 * gap;
+                    reset_spans.push(Span::raw(" ".repeat(fill as usize)));
+                }
+                lines.push(Line::from(reset_spans));
+            }
+
+            // vertical padding between grid rows (elbow room)
+            if row_idx + 1 < compact_quotas.chunks(cols_usize).len() {
+                lines.push(Line::from(""));
             }
         }
     }
@@ -185,6 +310,7 @@ fn quota_lines(
 fn open_code_lines(
     snapshot: &ProviderSnapshot,
     mode: LayoutMode,
+    inner_width: u16,
     theme: Theme,
 ) -> Vec<Line<'static>> {
     let sessions = stat_value(snapshot, "Sessions");
@@ -192,22 +318,61 @@ fn open_code_lines(
     let input = stat_value(snapshot, "Input");
     let output = stat_value(snapshot, "Output");
 
-    if mode == LayoutMode::Wide {
-        vec![
+    match mode {
+        LayoutMode::Wide => vec![
             Line::from(""), // Top interior padding
             stat_grid_line("Sessions", &sessions, "Input", &input, theme),
             stat_grid_line("Total Cost", &total_cost, "Output", &output, theme),
             Line::from(""), // Bottom interior padding
-        ]
-    } else {
-        vec![
+        ],
+        LayoutMode::Compact => {
+            // ponytail: mx-auto parent – one centered block containing left-aligned rows
+            let rows = [
+                ("Sessions", sessions.as_str()),
+                ("Total Cost", total_cost.as_str()),
+                ("Input", input.as_str()),
+                ("Output", output.as_str()),
+            ];
+
+            let raw: Vec<Vec<Span<'static>>> = rows
+                .into_iter()
+                .map(|(label, value)| {
+                    vec![
+                        Span::styled(format!("{label:<14}"), theme.secondary()),
+                        Span::styled(value.to_owned(), theme.primary()),
+                    ]
+                })
+                .collect();
+
+            let max_width = raw
+                .iter()
+                .map(|spans| spans.iter().map(|s| s.width() as u16).sum::<u16>())
+                .max()
+                .unwrap_or(0);
+            let pad = inner_width.saturating_sub(max_width) / 2;
+            let pad_str = " ".repeat(pad as usize);
+
+            let mut lines = Vec::with_capacity(6);
+            lines.push(Line::from(""));
+            for spans in raw {
+                let mut padded = Vec::with_capacity(spans.len() + 1);
+                if pad > 0 {
+                    padded.push(Span::raw(pad_str.clone()));
+                }
+                padded.extend(spans);
+                lines.push(Line::from(padded));
+            }
+            lines.push(Line::from(""));
+            lines
+        }
+        LayoutMode::Narrow => vec![
             Line::from(""), // Top interior padding
             stat_line("Sessions", &sessions, theme),
             stat_line("Total Cost", &total_cost, theme),
             stat_line("Input", &input, theme),
             stat_line("Output", &output, theme),
             Line::from(""), // Bottom interior padding
-        ]
+        ],
     }
 }
 
@@ -399,7 +564,7 @@ mod tests {
 
         assert!(text.contains("5 hour"));
         assert!(text.contains("65%"));
-        assert!(text.contains("remaining"));
+        assert!(!text.contains("remaining"));
         assert!(text.contains("◷ 1h 0m"));
 
         let status = status_title(
@@ -434,7 +599,7 @@ mod tests {
             0,
         ));
 
-        assert!(text.contains("5 hour\n"));
+        assert!(text.contains("5 hour"));
         assert!(text.contains("65%"));
         assert!(text.contains("resets in 1h 0m"));
     }

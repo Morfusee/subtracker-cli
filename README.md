@@ -127,15 +127,15 @@ $env:NO_COLOR = "1"
 stc
 ```
 
-Responsive modes:
+Responsive modes — formal phases (see `docs/ui-layout.md`):
 
 ```text
-Wide      >= 100 columns
-Compact   70-99 columns
-Narrow    < 70 columns
+P3/W  Wide      >= 100 columns  — desktop, full fidelity (flex-row)
+P2/C  Compact   70–99 columns   — first breakpoint, Grid auto-fit/expand (flex-col per quota, side-by-side when space allows)
+P1/N  Narrow    < 70 columns    — mobile, single-column flex-col
 ```
 
-Below 60 columns or 20 rows, Subtracker renders a terminal-too-small message. If the current provider data needs more vertical rows than are available, it asks for additional height rather than clipping the dashboard.
+Small terminals are never blocked: `render()` clamps `total_required_height` to `area.height` and draws truncated content instead of a "terminal too small" message. `Wide` no longer shows the `remaining` label after its bar (removed 2026-08-29).
 
 ## v1 boundaries
 

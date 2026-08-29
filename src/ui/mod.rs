@@ -18,32 +18,33 @@ use theme::Theme;
 pub const MIN_WIDTH: u16 = 60;
 pub const MIN_HEIGHT: u16 = 20;
 
+/// Formal layout phases. See `docs/ui-layout.md` for the agent-facing spec.
+/// Shorthand: P3/W = `Wide` (>=100), P2/C = `Compact` (70–99, first breakpoint), P1/N = `Narrow` (<70).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LayoutMode {
+    /// P3/W — desktop/wide, >=100 cols. Full fidelity; quota: label20 / bar (expanded `inner-33` clamp 20..80) / ◷ under bar, no `remaining`.
     Wide,
+    /// P2/C — first breakpoint (70–99). Grid auto-fit/expand: each quota is flex-col (label/bar/◷) placed in `cols=(inner+gap)/(min+gap)` grid, `col_width` expands to fill. See `provider_card.rs:140`.
     Compact,
+    /// P1/N — mobile/narrow, <70 cols. Single-column flex-col (label/bar/resets in) with indent.
     Narrow,
 }
 
 impl LayoutMode {
+    /// Map terminal width to the formal phase. Thresholds are the media-query contract.
     pub const fn for_width(width: u16) -> Self {
         if width >= 100 {
-            Self::Wide
+            Self::Wide // P3/W
         } else if width >= 70 {
-            Self::Compact
+            Self::Compact // P2/C — first snap below W
         } else {
-            Self::Narrow
+            Self::Narrow // P1/N
         }
     }
 }
 
 pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u8, theme: Theme) {
     let area = frame.area();
-
-    if area.width < MIN_WIDTH || area.height < MIN_HEIGHT {
-        render_minimum_size_message(frame, area, theme);
-        return;
-    }
 
     let mode = LayoutMode::for_width(area.width);
     let content_width = area.width.min(120);
@@ -74,17 +75,14 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
         .saturating_add(3) // three one-row gaps (between cards + before footer)
         .saturating_add(1); // footer
 
-    if cards_required_height > area.height {
-        render_content_too_tall_message(frame, area, theme);
-        return;
-    }
-
     let show_header = area.height >= cards_required_height.saturating_add(7);
-    let total_required_height = if show_header {
+    let mut total_required_height = if show_header {
         cards_required_height.saturating_add(7)
     } else {
         cards_required_height
     };
+    // ponytail: never block rendering – clamp to visible area so small terminals still show something
+    total_required_height = total_required_height.min(area.height);
 
     let h_offset = (area.width.saturating_sub(content_width)) / 2;
     let v_offset = (area.height.saturating_sub(total_required_height)) / 2;
@@ -115,7 +113,16 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
         .split(centered_area);
 
     let offset = if show_header {
-        frame.render_widget(header(theme), areas[0]);
+        let header_area = areas[0];
+        let logo_width: u16 = 25;
+        let x = header_area.x + header_area.width.saturating_sub(logo_width) / 2;
+        let logo_area = Rect {
+            x,
+            y: header_area.y,
+            width: logo_width,
+            height: 6,
+        };
+        frame.render_widget(header(theme), logo_area);
         2
     } else {
         0
@@ -155,37 +162,17 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
 
 fn header(theme: Theme) -> Paragraph<'static> {
     let logo_style = theme.provider_border(ProviderId::Codex);
+    // keep all 6 lines left-aligned within a centered block so the STC art stays aligned
     let lines = vec![
-        Line::from(Span::styled(
-            "███████╗████████╗ ██████╗                   ",
-            logo_style,
-        )),
-        Line::from(vec![
-            Span::styled("██╔════╝╚══██╔══╝██╔════╝   ", logo_style),
-            Span::styled(
-                "SUBTRACKER      ",
-                theme.primary().add_modifier(ratatui::style::Modifier::BOLD),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("███████╗   ██║   ██║        ", logo_style),
-            Span::styled("AI Usage Monitor", theme.secondary()),
-        ]),
-        Line::from(Span::styled(
-            "╚════██║   ██║   ██║                        ",
-            logo_style,
-        )),
-        Line::from(Span::styled(
-            "███████║   ██║   ╚██████╗                   ",
-            logo_style,
-        )),
-        Line::from(Span::styled(
-            "╚══════╝   ╚═╝    ╚═════╝                   ",
-            logo_style,
-        )),
+        Line::from(Span::styled("███████╗████████╗ ██████╗", logo_style)),
+        Line::from(Span::styled("██╔════╝╚══██╔══╝██╔════╝", logo_style)),
+        Line::from(Span::styled("███████╗   ██║   ██║", logo_style)),
+        Line::from(Span::styled("╚════██║   ██║   ██║", logo_style)),
+        Line::from(Span::styled("███████║   ██║   ╚██████╗", logo_style)),
+        Line::from(Span::styled("╚══════╝   ╚═╝    ╚═════╝", logo_style)),
     ];
 
-    Paragraph::new(lines).alignment(Alignment::Center)
+    Paragraph::new(lines) // left-aligned; centered as a block in render()
 }
 
 fn footer(mode: LayoutMode, theme: Theme) -> Paragraph<'static> {
@@ -219,54 +206,6 @@ fn footer(mode: LayoutMode, theme: Theme) -> Paragraph<'static> {
     };
 
     Paragraph::new(Line::from(spans)).alignment(Alignment::Center)
-}
-
-fn render_minimum_size_message(frame: &mut Frame, area: Rect, theme: Theme) {
-    render_center_message(
-        frame,
-        area,
-        theme,
-        vec![
-            "Subtracker".into(),
-            "".into(),
-            "Terminal too small.".into(),
-            "Resize to at least 60x20.".into(),
-        ],
-    );
-}
-
-fn render_content_too_tall_message(frame: &mut Frame, area: Rect, theme: Theme) {
-    render_center_message(
-        frame,
-        area,
-        theme,
-        vec![
-            "Subtracker".into(),
-            "".into(),
-            "Terminal too small for current provider data.".into(),
-            "Increase terminal height.".into(),
-        ],
-    );
-}
-
-fn render_center_message(frame: &mut Frame, area: Rect, theme: Theme, lines: Vec<String>) {
-    let message_height = u16::try_from(lines.len()).unwrap_or(4).min(area.height);
-
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(message_height),
-            Constraint::Min(0),
-        ])
-        .split(area);
-
-    let lines = lines
-        .into_iter()
-        .map(|line| Line::from(Span::styled(line, theme.primary())).alignment(Alignment::Center))
-        .collect::<Vec<_>>();
-
-    frame.render_widget(Paragraph::new(lines), vertical[1]);
 }
 
 #[cfg(test)]
@@ -424,7 +363,7 @@ mod tests {
         assert!(text.contains("▓▓▓▓"));
         assert!(text.contains("65%"));
         assert!(text.contains("312.3M tokens"));
-        assert!(text.contains("remaining"));
+        assert!(!text.contains("remaining"));
         assert!(text.contains("[r] refresh"));
         assert!(text.contains("auto 60s"));
         assert!(text.contains("[q] quit"));
@@ -549,7 +488,8 @@ mod tests {
 
         let text = buffer_text(&terminal);
 
-        assert!(text.contains("Terminal too small"));
-        assert!(text.contains("60x20"));
+        // ponytail: no hindrance – small terminals still render dashboard, not a blocking message
+        assert!(!text.contains("Terminal too small"));
+        assert!(text.contains("CODEX") || text.contains("OPENCODE") || text.contains("ANTIGRAVITY"));
     }
 }
