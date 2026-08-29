@@ -23,31 +23,48 @@ pub fn spinner_symbol(frame: u8) -> &'static str {
     SPINNER[usize::from(frame) % SPINNER.len()]
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct CardRenderContext {
+    pub mode: LayoutMode,
+    pub inner_width: u16,
+    pub density: Density,
+    pub theme: Theme,
+    pub now: DateTime<Utc>,
+    pub spinner_frame: u8,
+}
+
 pub fn content_lines(
     id: ProviderId,
     state: &ProviderState,
-    mode: LayoutMode,
-    inner_width: u16,
-    density: Density,
-    theme: Theme,
-    now: DateTime<Utc>,
-    spinner_frame: u8,
+    cx: CardRenderContext,
 ) -> Vec<Line<'static>> {
     if state.snapshot.is_none() {
-        return empty_state_lines(id, &state.display, theme, spinner_frame);
+        return empty_state_lines(id, &state.display, cx.theme, cx.spinner_frame);
     }
 
     let snapshot = state.snapshot.as_ref().expect("snapshot checked above");
 
     match id {
-        ProviderId::Codex | ProviderId::Antigravity => {
-            quota_lines(snapshot, mode, inner_width, density, theme, now)
-        }
+        ProviderId::Codex | ProviderId::Antigravity => quota_lines(
+            snapshot,
+            cx.mode,
+            cx.inner_width,
+            cx.density,
+            cx.theme,
+            cx.now,
+        ),
         ProviderId::OpenCode => {
             if !snapshot.quotas.is_empty() {
-                quota_lines(snapshot, mode, inner_width, density, theme, now)
+                quota_lines(
+                    snapshot,
+                    cx.mode,
+                    cx.inner_width,
+                    cx.density,
+                    cx.theme,
+                    cx.now,
+                )
             } else {
-                open_code_lines(snapshot, mode, inner_width, density, theme)
+                open_code_lines(snapshot, cx.mode, cx.inner_width, cx.density, cx.theme)
             }
         }
     }
@@ -510,12 +527,14 @@ mod tests {
         let lines = content_lines(
             ProviderId::Codex,
             app.provider(ProviderId::Codex),
-            LayoutMode::Wide,
-            110,
-            Density::Normal,
-            Theme::new(ColorMode::None),
-            now,
-            0,
+            CardRenderContext {
+                mode: LayoutMode::Wide,
+                inner_width: 110,
+                density: Density::Normal,
+                theme: Theme::new(ColorMode::None),
+                now,
+                spinner_frame: 0,
+            },
         );
         let text = plain(&lines);
 
@@ -549,12 +568,14 @@ mod tests {
         let text = plain(&content_lines(
             ProviderId::Codex,
             app.provider(ProviderId::Codex),
-            LayoutMode::Narrow,
-            58,
-            Density::Normal,
-            Theme::new(ColorMode::None),
-            now,
-            0,
+            CardRenderContext {
+                mode: LayoutMode::Narrow,
+                inner_width: 58,
+                density: Density::Normal,
+                theme: Theme::new(ColorMode::None),
+                now,
+                spinner_frame: 0,
+            },
         ));
 
         assert!(text.contains("5 hour"));
@@ -582,12 +603,14 @@ mod tests {
         let text = plain(&content_lines(
             ProviderId::Codex,
             app.provider(ProviderId::Codex),
-            LayoutMode::Compact,
-            80,
-            Density::Normal,
-            Theme::new(ColorMode::None),
-            now + chrono::Duration::minutes(3),
-            0,
+            CardRenderContext {
+                mode: LayoutMode::Compact,
+                inner_width: 80,
+                density: Density::Normal,
+                theme: Theme::new(ColorMode::None),
+                now: now + chrono::Duration::minutes(3),
+                spinner_frame: 0,
+            },
         ));
 
         assert!(text.contains("65%"));
@@ -615,12 +638,14 @@ mod tests {
         let text = plain(&content_lines(
             ProviderId::Codex,
             app.provider(ProviderId::Codex),
-            LayoutMode::Wide,
-            110,
-            Density::Normal,
-            Theme::new(ColorMode::None),
-            now,
-            0,
+            CardRenderContext {
+                mode: LayoutMode::Wide,
+                inner_width: 110,
+                density: Density::Normal,
+                theme: Theme::new(ColorMode::None),
+                now,
+                spinner_frame: 0,
+            },
         ));
 
         assert!(text.contains("Session unavailable"));
@@ -663,22 +688,26 @@ mod tests {
         let wide = plain(&content_lines(
             ProviderId::OpenCode,
             app.provider(ProviderId::OpenCode),
-            LayoutMode::Wide,
-            110,
-            Density::Normal,
-            Theme::new(ColorMode::None),
-            now,
-            0,
+            CardRenderContext {
+                mode: LayoutMode::Wide,
+                inner_width: 110,
+                density: Density::Normal,
+                theme: Theme::new(ColorMode::None),
+                now,
+                spinner_frame: 0,
+            },
         ));
         let compact = plain(&content_lines(
             ProviderId::OpenCode,
             app.provider(ProviderId::OpenCode),
-            LayoutMode::Compact,
-            80,
-            Density::Normal,
-            Theme::new(ColorMode::None),
-            now,
-            0,
+            CardRenderContext {
+                mode: LayoutMode::Compact,
+                inner_width: 80,
+                density: Density::Normal,
+                theme: Theme::new(ColorMode::None),
+                now,
+                spinner_frame: 0,
+            },
         ));
 
         assert!(wide.contains("│"));
@@ -705,12 +734,14 @@ mod tests {
         let lines = content_lines(
             ProviderId::Codex,
             app.provider(ProviderId::Codex),
-            LayoutMode::Wide,
-            110,
-            Density::Dense,
-            Theme::new(ColorMode::None),
-            now,
-            0,
+            CardRenderContext {
+                mode: LayoutMode::Wide,
+                inner_width: 110,
+                density: Density::Dense,
+                theme: Theme::new(ColorMode::None),
+                now,
+                spinner_frame: 0,
+            },
         );
         let text = plain(&lines);
 
@@ -739,12 +770,14 @@ mod tests {
         let lines = content_lines(
             ProviderId::Codex,
             app.provider(ProviderId::Codex),
-            LayoutMode::Wide,
-            110,
-            Density::Normal,
-            Theme::new(ColorMode::None),
-            now,
-            0,
+            CardRenderContext {
+                mode: LayoutMode::Wide,
+                inner_width: 110,
+                density: Density::Normal,
+                theme: Theme::new(ColorMode::None),
+                now,
+                spinner_frame: 0,
+            },
         );
         let text = plain(&lines);
 

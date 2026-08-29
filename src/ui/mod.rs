@@ -98,21 +98,16 @@ impl DashboardLayout {
     ) -> Self {
         let content_width = area.width.min(120);
         let inner_width = content_width.saturating_sub(2 + density.card_padding() * 2);
-        let cards = ProviderId::ALL.map(|id| {
-            (
-                id,
-                provider_card::content_lines(
-                    id,
-                    app.provider(id),
-                    mode,
-                    inner_width,
-                    density,
-                    theme,
-                    now,
-                    spinner_frame,
-                ),
-            )
-        });
+        let cx = provider_card::CardRenderContext {
+            mode,
+            inner_width,
+            density,
+            theme,
+            now,
+            spinner_frame,
+        };
+        let cards =
+            ProviderId::ALL.map(|id| (id, provider_card::content_lines(id, app.provider(id), cx)));
         let heights = cards.each_ref().map(|(_, lines)| {
             u16::try_from(lines.len())
                 .unwrap_or(u16::MAX)
