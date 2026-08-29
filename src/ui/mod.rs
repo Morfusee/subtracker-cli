@@ -143,7 +143,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
 }
 
 fn header(theme: Theme) -> Paragraph<'static> {
-    let logo_style = theme.provider_border(ProviderId::OpenCode);
+    let logo_style = theme.provider_border(ProviderId::Codex);
     let lines = vec![
         Line::from(Span::styled(
             "███████╗████████╗ ██████╗                   ",

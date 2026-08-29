@@ -74,9 +74,9 @@ impl Theme {
 
     pub fn provider_border(self, provider: ProviderId) -> Style {
         let rgb = match provider {
-            ProviderId::Codex => (56, 189, 248),
-            ProviderId::OpenCode => (45, 212, 191),
-            ProviderId::Antigravity => (192, 132, 252),
+            ProviderId::Codex => (110, 160, 205),    // Dark pastel sky blue
+            ProviderId::OpenCode => (100, 185, 165), // Dark pastel sage / teal
+            ProviderId::Antigravity => (175, 145, 210), // Dark pastel mauve / lavender
         };
 
         let named = match provider {
@@ -90,31 +90,31 @@ impl Theme {
 
     pub fn quota(self, remaining_percent: f64) -> Style {
         match QuotaHealth::from_remaining(remaining_percent) {
-            QuotaHealth::Healthy => self.style((74, 222, 128), Color::Green),
-            QuotaHealth::Moderate => self.style((251, 191, 36), Color::Yellow),
-            QuotaHealth::Low => self.style((251, 146, 60), Color::DarkGray),
-            QuotaHealth::Critical => self.style((248, 113, 113), Color::Red),
+            QuotaHealth::Healthy => self.style((120, 180, 135), Color::Green), // Soft pastel sage
+            QuotaHealth::Moderate => self.style((220, 180, 110), Color::Yellow), // Soft pastel amber
+            QuotaHealth::Low => self.style((215, 135, 105), Color::DarkGray), // Soft pastel terracotta
+            QuotaHealth::Critical => self.style((215, 110, 115), Color::Red), // Soft pastel dusty rose
         }
     }
 
     pub fn primary(self) -> Style {
-        self.style((229, 231, 235), Color::White)
+        self.style((210, 218, 225), Color::White) // Soft pastel chalk
     }
 
     pub fn secondary(self) -> Style {
-        self.style((148, 163, 184), Color::DarkGray)
+        self.style((130, 145, 160), Color::DarkGray) // Muted pastel slate
     }
 
     pub fn empty_bar(self) -> Style {
-        self.style((51, 65, 85), Color::DarkGray)
+        self.style((45, 55, 70), Color::DarkGray) // Deep muted slate
     }
 
     pub fn warning(self) -> Style {
-        self.style((251, 191, 36), Color::Yellow)
+        self.style((220, 180, 110), Color::Yellow)
     }
 
     pub fn error(self) -> Style {
-        self.style((248, 113, 113), Color::Red)
+        self.style((215, 110, 115), Color::Red)
     }
 
     fn style(self, rgb: (u8, u8, u8), named: Color) -> Style {
@@ -149,15 +149,15 @@ mod tests {
 
         assert_eq!(
             theme.provider_border(ProviderId::Codex).fg,
-            Some(Color::Rgb(56, 189, 248))
+            Some(Color::Rgb(110, 160, 205))
         );
         assert_eq!(
             theme.provider_border(ProviderId::OpenCode).fg,
-            Some(Color::Rgb(45, 212, 191))
+            Some(Color::Rgb(100, 185, 165))
         );
         assert_eq!(
             theme.provider_border(ProviderId::Antigravity).fg,
-            Some(Color::Rgb(192, 132, 252))
+            Some(Color::Rgb(175, 145, 210))
         );
     }
 
