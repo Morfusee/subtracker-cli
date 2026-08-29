@@ -46,6 +46,9 @@ jobs:
             -DestinationPath $name
           $hash = (Get-FileHash $name -Algorithm SHA256).Hash.ToLower()
           "$hash  $name" | Set-Content "$name.sha256"
+          Copy-Item "target/${{ matrix.target }}/release/stc.exe" -Destination "stc.exe"
+          $exeHash = (Get-FileHash "stc.exe" -Algorithm SHA256).Hash.ToLower()
+          "$exeHash  stc.exe" | Set-Content "stc.exe.sha256"
 
       - name: Package macOS
         if: matrix.kind == 'macos'
@@ -61,6 +64,8 @@ jobs:
           path: |
             stc-${{ matrix.target }}.zip
             stc-${{ matrix.target }}.zip.sha256
+            stc.exe
+            stc.exe.sha256
             stc-${{ matrix.target }}.tar.gz
             stc-${{ matrix.target }}.tar.gz.sha256
           if-no-files-found: ignore
