@@ -3,6 +3,7 @@ use thiserror::Error;
 
 use crate::model::{ProviderId, ProviderSnapshot};
 
+pub mod antigravity;
 pub mod codex;
 pub mod opencode;
 pub mod process;
