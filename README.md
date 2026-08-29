@@ -70,23 +70,19 @@ Ctrl+C  quit
 
 Providers refresh automatically every 60 seconds.
 
-## Install from a release
+## Installation
 
-Before placing `stc` on your PATH, check whether another installed tool already uses that command name.
+### Via Cargo (crates.io)
 
-macOS:
-
-```text
-command -v stc
+```bash
+cargo install subtracker
 ```
 
-Windows PowerShell:
+This installs the binary `stc` to your Cargo bin folder (`~/.cargo/bin`), allowing you to run `stc` from any terminal.
 
-```text
-Get-Command stc -ErrorAction SilentlyContinue
-```
+### Direct Download from Releases
 
-Download the archive matching your platform from GitHub Releases, extract `stc`/`stc.exe`, and place it in a directory on your PATH.
+Download the precompiled standalone executable (`stc.exe` on Windows or `stc-*.tar.gz` on macOS) matching your platform from [GitHub Releases](https://github.com/Morfusee/subtracker-cli/releases), and place it in a directory on your `PATH`.
 
 ## Build from source
 

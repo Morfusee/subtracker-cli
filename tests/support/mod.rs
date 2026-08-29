@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use std::{sync::Mutex, time::Duration};
 
-use subtracker_cli::providers::{
+use subtracker::providers::{
     ProviderError,
     process::{CommandOutput, CommandSpec, ProcessRunner},
 };

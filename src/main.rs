@@ -6,7 +6,7 @@ use futures_util::StreamExt;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::time::{Instant, MissedTickBehavior, interval_at};
 
-use subtracker_cli::{
+use subtracker::{
     event::{Action, action_for_key},
     model::ProviderId,
     providers::{

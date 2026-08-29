@@ -1,6 +1,6 @@
 use std::{fs, time::Duration};
 
-use subtracker_cli::{
+use subtracker::{
     model::ProviderId,
     providers::{ProviderError, UsageProvider, codex::CodexProvider},
 };

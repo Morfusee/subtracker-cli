@@ -2,7 +2,7 @@ mod support;
 
 use std::{sync::Arc, time::Duration};
 
-use subtracker_cli::{
+use subtracker::{
     model::ProviderId,
     providers::{UsageProvider, antigravity::AntigravityProvider, process::CommandSpec},
 };
