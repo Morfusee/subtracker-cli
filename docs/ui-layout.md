@@ -63,7 +63,7 @@ The first candidate whose content width and complete required height fit the ter
 - Codex is focused at startup.
 - `j`/`Down` and `k`/`Up` move focus with wraparound.
 - `Space`/`Enter` toggle the focused card.
-- `▸` marks focus, `[-]` marks expanded cards, and `[+]` marks collapsed cards.
+- Focus is indicated by inverted title styling and a bold card border.
 - A collapsed card is two rows high: provider title on the top border and status on the bottom border.
 - Collapse hides body data by explicit user choice; responsive density alone never omits data.
 

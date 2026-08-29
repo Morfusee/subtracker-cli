@@ -220,9 +220,6 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
         let provider_state = app.provider(*id);
 
         let focused = app.is_focused(*id);
-        let collapsed = app.is_collapsed(*id);
-        let focus_marker = if focused { "▸ " } else { "  " };
-        let collapse_marker = if collapsed { "[+]" } else { "[-]" };
         let title_style = if focused {
             theme.provider_title(*id).add_modifier(Modifier::REVERSED)
         } else {
@@ -236,10 +233,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
 
         let top_title = Line::from(vec![
             Span::raw("──  "),
-            Span::styled(
-                format!("{focus_marker}{collapse_marker} {}", id.display_name()),
-                title_style,
-            ),
+            Span::styled(id.display_name(), title_style),
             Span::raw("  "),
         ]);
 
@@ -726,7 +720,9 @@ mod tests {
         terminal
             .draw(|frame| render(frame, &app, now, 0, Theme::new(ColorMode::None)))
             .unwrap();
-        assert!(buffer_text(&terminal).contains("▸ [-] CODEX"));
+        let initial_text = buffer_text(&terminal);
+        assert!(initial_text.contains("CODEX"));
+        assert!(initial_text.contains("65%"));
 
         app.toggle_focused_collapse();
         app.next_provider();
@@ -734,7 +730,13 @@ mod tests {
             .draw(|frame| render(frame, &app, now, 0, Theme::new(ColorMode::None)))
             .unwrap();
         let text = buffer_text(&terminal);
-        assert!(text.contains("[+] CODEX"));
-        assert!(text.contains("▸ [-] OPENCODE"));
+        assert!(text.contains("CODEX"));
+        assert!(
+            !text.contains("65%"),
+            "collapsed codex must hide body quota lines"
+        );
+        assert!(text.contains("updated just now"));
+        assert!(text.contains("OPENCODE"));
+        assert!(text.contains("312.3M tokens"));
     }
 }
