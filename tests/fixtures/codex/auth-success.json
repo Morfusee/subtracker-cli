@@ -1,0 +1,7 @@
+{
+  "tokens": {
+    "access_token": "fixture-access-token",
+    "refresh_token": "fixture-refresh-token",
+    "account_id": "fixture-account-id"
+  }
+}
