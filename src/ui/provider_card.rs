@@ -109,9 +109,7 @@ fn quota_lines(
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
-    if mode == LayoutMode::Wide {
-        lines.push(Line::from(""));
-    }
+    lines.push(Line::from("")); // Top interior padding
 
     for quota in &snapshot.quotas {
         let Some(remaining) = quota.remaining_percent else {
@@ -179,6 +177,8 @@ fn quota_lines(
         }
     }
 
+    lines.push(Line::from("")); // Bottom interior padding
+
     lines
 }
 
@@ -194,16 +194,19 @@ fn open_code_lines(
 
     if mode == LayoutMode::Wide {
         vec![
-            Line::from(""),
+            Line::from(""), // Top interior padding
             stat_grid_line("Sessions", &sessions, "Input", &input, theme),
             stat_grid_line("Total Cost", &total_cost, "Output", &output, theme),
+            Line::from(""), // Bottom interior padding
         ]
     } else {
         vec![
+            Line::from(""), // Top interior padding
             stat_line("Sessions", &sessions, theme),
             stat_line("Total Cost", &total_cost, theme),
             stat_line("Input", &input, theme),
             stat_line("Output", &output, theme),
+            Line::from(""), // Bottom interior padding
         ]
     }
 }
