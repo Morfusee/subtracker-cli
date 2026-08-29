@@ -2,14 +2,29 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
   build:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -28,6 +43,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -70,10 +87,9 @@ jobs:
             stc-${{ matrix.target }}.tar.gz.sha256
           if-no-files-found: ignore
 
-  publish:
-    needs: build
+  upload-assets:
+    needs: [release-please, build]
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -82,12 +98,10 @@ jobs:
           pattern: release-*
           merge-multiple: true
 
-      - name: Publish GitHub Release
+      - name: Upload Release Assets
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            --verify-tag \
-            --generate-notes \
-            stc-*
+          gh release upload "$TAG" stc-* --clobber
