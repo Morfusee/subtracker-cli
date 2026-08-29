@@ -2074,6 +2074,7 @@ dependencies = [
  "futures-util",
  "ratatui",
  "reqwest",
+ "semver",
  "serde",
  "serde_json",
  "strip-ansi-escapes",

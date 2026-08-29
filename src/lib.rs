@@ -6,3 +6,4 @@ pub mod refresh;
 pub mod runtime;
 pub mod terminal;
 pub mod ui;
+pub mod updater;
