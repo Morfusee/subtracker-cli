@@ -123,11 +123,17 @@ pub fn open_release_notes(url: &Url) -> io::Result<()> {
         c
     };
 
-    command
+    let status = command
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .spawn()?;
-    Ok(())
+        .status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "browser opener exited with {status}"
+        )))
+    }
 }
 
 pub fn install_update() -> io::Result<bool> {
