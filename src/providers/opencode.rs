@@ -1,26 +1,53 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use std::{sync::Arc, time::Duration};
+use reqwest::{Client, StatusCode};
+use serde::Deserialize;
+use std::{fmt, path::PathBuf, time::Duration};
+use url::Url;
 
-use crate::model::{ProviderId, ProviderSnapshot, UsageStat, UsageValue};
+use crate::model::{ProviderId, ProviderSnapshot, QuotaWindow};
 
-use super::{
-    ProviderError, UsageProvider,
-    process::{CommandSpec, ProcessRunner, classify_command_output},
-};
+use super::{ProviderError, UsageProvider};
+
+pub const DEFAULT_ENDPOINT: &str = "https://opencode.ai/zen/go/v1/usage";
 
 pub struct OpenCodeProvider {
-    runner: Arc<dyn ProcessRunner>,
-    timeout: Duration,
+    client: Client,
+    auth_path: PathBuf,
+    endpoint: Url,
 }
 
 impl OpenCodeProvider {
-    pub fn new(runner: Arc<dyn ProcessRunner>, timeout: Duration) -> Self {
-        Self { runner, timeout }
+    pub fn new(client: Client, auth_path: PathBuf, endpoint: Url) -> Self {
+        Self {
+            client,
+            auth_path,
+            endpoint,
+        }
     }
 
-    pub fn command_spec() -> CommandSpec {
-        CommandSpec::new("opencode", ["stats"])
+    pub fn production() -> Result<Self, ProviderError> {
+        let home = dirs::home_dir().ok_or(ProviderError::CredentialsNotFound)?;
+        let auth_path = home
+            .join(".local")
+            .join("share")
+            .join("opencode")
+            .join("auth.json");
+        let endpoint = Url::parse(DEFAULT_ENDPOINT).map_err(|_| ProviderError::Network)?;
+        let client = Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .map_err(|_| ProviderError::Network)?;
+
+        Ok(Self::new(client, auth_path, endpoint))
+    }
+
+    async fn load_auth(&self) -> Result<OpenCodeAuth, ProviderError> {
+        let input = tokio::fs::read_to_string(&self.auth_path)
+            .await
+            .map_err(|_| ProviderError::CredentialsNotFound)?;
+
+        parse_auth(&input)
     }
 }
 
@@ -31,84 +58,209 @@ impl UsageProvider for OpenCodeProvider {
     }
 
     async fn fetch(&self) -> Result<ProviderSnapshot, ProviderError> {
-        let output = self.runner.run(&Self::command_spec(), self.timeout).await?;
+        let auth = self.load_auth().await?;
 
-        let stdout = classify_command_output(&output)?;
-        parse_stats(stdout, Utc::now())
+        let response = self
+            .client
+            .get(self.endpoint.clone())
+            .header(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {}", auth.api_key()),
+            )
+            .header(reqwest::header::ACCEPT, "application/json")
+            .send()
+            .await
+            .map_err(|_| ProviderError::Network)?;
+
+        if matches!(
+            response.status(),
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+        ) {
+            return Err(ProviderError::NotAuthenticated);
+        }
+
+        if !response.status().is_success() {
+            return Err(ProviderError::Network);
+        }
+
+        let body = response.text().await.map_err(|_| ProviderError::Network)?;
+
+        parse_usage(&body, Utc::now())
     }
 }
 
-fn parse_stats(input: &str, fetched_at: DateTime<Utc>) -> Result<ProviderSnapshot, ProviderError> {
-    let clean = strip_ansi_escapes::strip(input);
-    let text = String::from_utf8_lossy(&clean);
+#[derive(Clone)]
+pub struct OpenCodeAuth {
+    api_key: String,
+}
 
-    let sessions = parse_integer(row_value(&text, "Sessions")?)?;
-    let total_cost = parse_money_cents(row_value(&text, "Total Cost")?)?;
-    let input_tokens = parse_compact_count(row_value(&text, "Input")?)?;
-    let output_tokens = parse_compact_count(row_value(&text, "Output")?)?;
+impl OpenCodeAuth {
+    pub fn api_key(&self) -> &str {
+        &self.api_key
+    }
+}
+
+impl fmt::Debug for OpenCodeAuth {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OpenCodeAuth")
+            .field("api_key", &"<redacted>")
+            .finish()
+    }
+}
+
+#[derive(Deserialize)]
+struct AuthFile {
+    opencode: Option<OpenCodeCredentials>,
+    key: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct OpenCodeCredentials {
+    key: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct UsageResponse {
+    usage: UsageData,
+}
+
+#[derive(Deserialize)]
+struct UsageData {
+    rolling: Option<UsageWindow>,
+    weekly: Option<UsageWindow>,
+    monthly: Option<UsageWindow>,
+}
+
+#[derive(Deserialize)]
+struct UsageWindow {
+    percent: f64,
+    #[serde(rename = "resetsAt")]
+    resets_at: Option<String>,
+}
+
+pub fn parse_auth(input: &str) -> Result<OpenCodeAuth, ProviderError> {
+    let parsed: AuthFile =
+        serde_json::from_str(input).map_err(|_| ProviderError::CredentialsNotFound)?;
+
+    let api_key = parsed
+        .opencode
+        .and_then(|c| c.key)
+        .or(parsed.key)
+        .filter(|k| !k.is_empty())
+        .ok_or(ProviderError::CredentialsNotFound)?;
+
+    Ok(OpenCodeAuth { api_key })
+}
+
+pub fn parse_usage(
+    input: &str,
+    fetched_at: DateTime<Utc>,
+) -> Result<ProviderSnapshot, ProviderError> {
+    let parsed: UsageResponse =
+        serde_json::from_str(input).map_err(|_| ProviderError::ParseError)?;
+
+    let definitions = [
+        (parsed.usage.rolling, "5 hour", 18_000),
+        (parsed.usage.weekly, "Weekly", 604_800),
+        (parsed.usage.monthly, "Monthly", 2_592_000),
+    ];
+
+    let mut quotas = Vec::new();
+
+    for (maybe_window, label, seconds) in definitions {
+        let Some(window) = maybe_window else {
+            continue;
+        };
+
+        if !(0.0..=100.0).contains(&window.percent) {
+            return Err(ProviderError::ParseError);
+        }
+
+        let resets_at = match window.resets_at {
+            Some(resets) => Some(
+                DateTime::parse_from_rfc3339(&resets)
+                    .map_err(|_| ProviderError::ParseError)?
+                    .with_timezone(&Utc),
+            ),
+            None => None,
+        };
+
+        quotas.push(QuotaWindow::from_used_percent(
+            label,
+            window.percent,
+            resets_at,
+            Some(seconds),
+        ));
+    }
+
+    if quotas.is_empty() {
+        return Err(ProviderError::UnsupportedOutput);
+    }
 
     Ok(ProviderSnapshot {
         provider: ProviderId::OpenCode,
         account_label: None,
-        quotas: Vec::new(),
-        stats: vec![
-            UsageStat {
-                label: "Sessions".into(),
-                value: UsageValue::Count(sessions),
-            },
-            UsageStat {
-                label: "Total Cost".into(),
-                value: UsageValue::MoneyCents(total_cost),
-            },
-            UsageStat {
-                label: "Input".into(),
-                value: UsageValue::Tokens(input_tokens),
-            },
-            UsageStat {
-                label: "Output".into(),
-                value: UsageValue::Tokens(output_tokens),
-            },
-        ],
+        quotas,
+        stats: Vec::new(),
         fetched_at,
     })
 }
 
-fn row_value<'a>(input: &'a str, label: &str) -> Result<&'a str, ProviderError> {
-    input
-        .lines()
-        .map(|line| line.trim().trim_matches('│').trim())
-        .find_map(|row| {
-            row.strip_prefix(label)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-        })
-        .ok_or(ProviderError::UnsupportedOutput)
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
 
-fn parse_integer(value: &str) -> Result<u64, ProviderError> {
-    value
-        .replace(',', "")
-        .parse()
-        .map_err(|_| ProviderError::ParseError)
-}
+    #[test]
+    fn parses_opencode_auth_without_exposing_key_in_debug() {
+        let auth = parse_auth(include_str!(
+            "../../tests/fixtures/opencode/auth-success.json"
+        ))
+        .unwrap();
 
-fn parse_money_cents(value: &str) -> Result<i64, ProviderError> {
-    let value = value.strip_prefix('$').ok_or(ProviderError::ParseError)?;
+        assert_eq!(auth.api_key(), "sk-opencode-fixture-key");
 
-    let amount: f64 = value.parse().map_err(|_| ProviderError::ParseError)?;
-    Ok((amount * 100.0).round() as i64)
-}
+        let debug = format!("{auth:?}");
+        assert!(!debug.contains("sk-opencode-fixture-key"));
+    }
 
-fn parse_compact_count(value: &str) -> Result<u64, ProviderError> {
-    let value = value.replace(',', "");
-    let (number, multiplier) = match value.chars().last() {
-        Some('K') | Some('k') => (&value[..value.len() - 1], 1_000.0),
-        Some('M') | Some('m') => (&value[..value.len() - 1], 1_000_000.0),
-        Some('B') | Some('b') => (&value[..value.len() - 1], 1_000_000_000.0),
-        Some(_) => (value.as_str(), 1.0),
-        None => return Err(ProviderError::ParseError),
-    };
+    #[test]
+    fn converts_opencode_used_percent_to_remaining_for_each_window() {
+        let fetched_at = Utc.timestamp_opt(1_788_000_100, 0).single().unwrap();
+        let snapshot = parse_usage(
+            include_str!("../../tests/fixtures/opencode/usage-success.json"),
+            fetched_at,
+        )
+        .unwrap();
 
-    let parsed: f64 = number.parse().map_err(|_| ProviderError::ParseError)?;
-    Ok((parsed * multiplier).round() as u64)
+        assert_eq!(snapshot.provider, ProviderId::OpenCode);
+        assert_eq!(snapshot.quotas.len(), 3);
+
+        assert_eq!(snapshot.quotas[0].label, "5 hour");
+        assert_eq!(snapshot.quotas[0].remaining_percent, Some(91.0));
+        assert_eq!(snapshot.quotas[0].window_seconds, Some(18_000));
+
+        assert_eq!(snapshot.quotas[1].label, "Weekly");
+        assert_eq!(snapshot.quotas[1].remaining_percent, Some(88.0));
+        assert_eq!(snapshot.quotas[1].window_seconds, Some(604_800));
+
+        assert_eq!(snapshot.quotas[2].label, "Monthly");
+        assert_eq!(snapshot.quotas[2].remaining_percent, Some(85.0));
+        assert_eq!(snapshot.quotas[2].window_seconds, Some(2_592_000));
+    }
+
+    #[test]
+    fn missing_monthly_window_is_valid() {
+        let fetched_at = Utc.timestamp_opt(1_788_000_100, 0).single().unwrap();
+        let snapshot = parse_usage(
+            include_str!("../../tests/fixtures/opencode/usage-no-monthly.json"),
+            fetched_at,
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.quotas.len(), 2);
+        assert_eq!(snapshot.quotas[0].remaining_percent, Some(75.0));
+        assert_eq!(snapshot.quotas[1].remaining_percent, Some(50.0));
+    }
 }

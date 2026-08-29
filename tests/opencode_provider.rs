@@ -1,37 +1,83 @@
-mod support;
-
-use std::{sync::Arc, time::Duration};
+use std::{fs, time::Duration};
 
 use subtracker_cli::{
-    model::{ProviderId, UsageValue},
-    providers::{UsageProvider, opencode::OpenCodeProvider, process::CommandSpec},
+    model::ProviderId,
+    providers::{ProviderError, UsageProvider, opencode::OpenCodeProvider},
+};
+use tempfile::tempdir;
+use url::Url;
+use wiremock::{
+    Mock, MockServer, ResponseTemplate,
+    matchers::{header, method, path},
 };
 
-use support::FixtureRunner;
-
 #[tokio::test]
-async fn opencode_stats_are_normalized_to_four_v1_values() {
-    let runner = Arc::new(FixtureRunner::success(
-        CommandSpec::new("opencode", ["stats"]),
-        include_str!("fixtures/opencode/stats-success.txt"),
-    ));
+async fn opencode_fetch_uses_current_auth_and_bearer_header() {
+    let server = MockServer::start().await;
+    let fixture = include_str!("fixtures/opencode/usage-success.json");
 
-    let provider = OpenCodeProvider::new(runner, Duration::from_secs(15));
+    Mock::given(method("GET"))
+        .and(path("/zen/go/v1/usage"))
+        .and(header("authorization", "Bearer sk-opencode-fixture-key"))
+        .and(header("accept", "application/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(fixture, "application/json"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempdir().unwrap();
+    let auth_path = temp.path().join("auth.json");
+    fs::write(
+        &auth_path,
+        include_str!("fixtures/opencode/auth-success.json"),
+    )
+    .unwrap();
+
+    let endpoint = Url::parse(&format!("{}/zen/go/v1/usage", server.uri())).unwrap();
+
+    let provider = OpenCodeProvider::new(
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .unwrap(),
+        auth_path,
+        endpoint,
+    );
+
     let snapshot = provider.fetch().await.unwrap();
 
     assert_eq!(snapshot.provider, ProviderId::OpenCode);
-    assert!(snapshot.quotas.is_empty());
-    assert_eq!(snapshot.stats.len(), 4);
+    assert_eq!(snapshot.quotas.len(), 3);
+    assert_eq!(snapshot.quotas[0].remaining_percent, Some(91.0));
+    assert_eq!(snapshot.quotas[1].remaining_percent, Some(88.0));
+    assert_eq!(snapshot.quotas[2].remaining_percent, Some(85.0));
+}
 
-    assert_eq!(snapshot.stats[0].label, "Sessions");
-    assert_eq!(snapshot.stats[0].value, UsageValue::Count(42));
+#[tokio::test]
+async fn opencode_unauthorized_response_surfaces_not_authenticated() {
+    let server = MockServer::start().await;
 
-    assert_eq!(snapshot.stats[1].label, "Total Cost");
-    assert_eq!(snapshot.stats[1].value, UsageValue::MoneyCents(1234));
+    Mock::given(method("GET"))
+        .and(path("/zen/go/v1/usage"))
+        .respond_with(ResponseTemplate::new(401))
+        .expect(1)
+        .mount(&server)
+        .await;
 
-    assert_eq!(snapshot.stats[2].label, "Input");
-    assert_eq!(snapshot.stats[2].value, UsageValue::Tokens(599_000));
+    let temp = tempdir().unwrap();
+    let auth_path = temp.path().join("auth.json");
+    fs::write(
+        &auth_path,
+        include_str!("fixtures/opencode/auth-success.json"),
+    )
+    .unwrap();
 
-    assert_eq!(snapshot.stats[3].label, "Output");
-    assert_eq!(snapshot.stats[3].value, UsageValue::Tokens(18_000));
+    let endpoint = Url::parse(&format!("{}/zen/go/v1/usage", server.uri())).unwrap();
+
+    let provider = OpenCodeProvider::new(reqwest::Client::new(), auth_path, endpoint);
+
+    assert_eq!(
+        provider.fetch().await.unwrap_err(),
+        ProviderError::NotAuthenticated
+    );
 }

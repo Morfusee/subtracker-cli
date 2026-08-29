@@ -76,8 +76,7 @@ fn production_providers() -> Result<ProviderRegistry, Box<dyn Error>> {
     let timeout = Duration::from_secs(15);
 
     let codex: Arc<dyn UsageProvider> = Arc::new(CodexProvider::production()?);
-    let opencode: Arc<dyn UsageProvider> =
-        Arc::new(OpenCodeProvider::new(process_runner.clone(), timeout));
+    let opencode: Arc<dyn UsageProvider> = Arc::new(OpenCodeProvider::production()?);
     let antigravity: Arc<dyn UsageProvider> =
         Arc::new(AntigravityProvider::new(process_runner, timeout));
 

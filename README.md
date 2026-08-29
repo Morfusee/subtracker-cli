@@ -30,18 +30,23 @@ The `wham/usage` backend is a first-party but undocumented integration point and
 
 ### OpenCode
 
-OpenCode must already be installed and usable:
+Subtracker reads your OpenCode API credentials from:
 
 ```text
-opencode stats
+~/.local/share/opencode/auth.json
 ```
 
-Subtracker shows the v1 subset:
+and queries the OpenCode Go subscription usage endpoint:
 
-- sessions
-- total cost
-- input tokens
-- output tokens
+```text
+GET https://opencode.ai/zen/go/v1/usage
+```
+
+Subtracker monitors:
+
+- 5 hour rolling limit
+- Weekly limit
+- Monthly limit
 
 ### Antigravity
 

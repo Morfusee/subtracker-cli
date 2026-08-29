@@ -38,6 +38,10 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
                 | (ProviderId::Codex, crate::providers::ProviderError::CredentialsNotFound) => {
                     lines.push(Line::from("Run `codex login`"));
                 }
+                (ProviderId::OpenCode, crate::providers::ProviderError::NotAuthenticated)
+                | (ProviderId::OpenCode, crate::providers::ProviderError::CredentialsNotFound) => {
+                    lines.push(Line::from("Connect account in OpenCode"));
+                }
                 (ProviderId::Antigravity, crate::providers::ProviderError::NotAuthenticated) => {
                     lines.push(Line::from("Run `agy` and sign in"));
                 }
