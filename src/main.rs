@@ -55,6 +55,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         match action_for_key(key) {
                             Action::Quit => break,
                             Action::Refresh => runtime.request_refresh(),
+                            Action::NextProvider => runtime.next_provider(),
+                            Action::PreviousProvider => runtime.prev_provider(),
+                            Action::ToggleCollapse => runtime.toggle_focused_collapse(),
                             Action::Ignore => {}
                         }
                     }

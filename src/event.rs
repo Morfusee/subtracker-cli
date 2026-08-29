@@ -3,6 +3,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Action {
     Refresh,
+    NextProvider,
+    PreviousProvider,
+    ToggleCollapse,
     Quit,
     Ignore,
 }
@@ -18,6 +21,9 @@ pub fn action_for_key(key: KeyEvent) -> Action {
             Action::Quit
         }
         (KeyCode::Char('r'), KeyModifiers::NONE) => Action::Refresh,
+        (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => Action::NextProvider,
+        (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::PreviousProvider,
+        (KeyCode::Char(' ') | KeyCode::Enter, KeyModifiers::NONE) => Action::ToggleCollapse,
         _ => Action::Ignore,
     }
 }
@@ -59,5 +65,29 @@ mod tests {
         );
 
         assert_eq!(action_for_key(release), Action::Ignore);
+    }
+
+    #[test]
+    fn navigation_and_collapse_keys_map_to_dashboard_actions() {
+        for code in [KeyCode::Char('j'), KeyCode::Down] {
+            assert_eq!(
+                action_for_key(press(code, KeyModifiers::NONE)),
+                Action::NextProvider
+            );
+        }
+
+        for code in [KeyCode::Char('k'), KeyCode::Up] {
+            assert_eq!(
+                action_for_key(press(code, KeyModifiers::NONE)),
+                Action::PreviousProvider
+            );
+        }
+
+        for code in [KeyCode::Char(' '), KeyCode::Enter] {
+            assert_eq!(
+                action_for_key(press(code, KeyModifiers::NONE)),
+                Action::ToggleCollapse
+            );
+        }
     }
 }

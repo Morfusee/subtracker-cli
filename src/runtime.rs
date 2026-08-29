@@ -34,6 +34,18 @@ impl RuntimeController {
         spawn_refreshes(ids, &self.providers, self.result_tx.clone());
     }
 
+    pub fn next_provider(&mut self) {
+        self.app.next_provider();
+    }
+
+    pub fn prev_provider(&mut self) {
+        self.app.prev_provider();
+    }
+
+    pub fn toggle_focused_collapse(&mut self) {
+        self.app.toggle_focused_collapse();
+    }
+
     pub fn apply_refresh_result(&mut self, refresh: RefreshResult) {
         let restart = self.app.finish_refresh(refresh.id, refresh.result);
 
