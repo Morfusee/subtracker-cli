@@ -77,20 +77,19 @@ pub fn status_title(
     now: DateTime<Utc>,
     spinner_frame: u8,
 ) -> Option<Line<'static>> {
-    let snapshot = state.snapshot.as_ref()?;
-    let fetched_at = snapshot.fetched_at;
-
     let line = match &state.display {
-        DisplayState::Ready => Line::from(vec![
-            Span::raw("  "),
-            Span::styled("● ", theme.provider_border(id)),
-            Span::styled(
-                format!("updated {}", format_age(fetched_at, now)),
-                theme.secondary(),
-            ),
-            Span::raw("  ──"),
-        ]),
-
+        DisplayState::Ready => {
+            let fetched_at = state.snapshot.as_ref()?.fetched_at;
+            Line::from(vec![
+                Span::raw("  "),
+                Span::styled("● ", theme.provider_border(id)),
+                Span::styled(
+                    format!("updated {}", format_age(fetched_at, now)),
+                    theme.secondary(),
+                ),
+                Span::raw("  ──"),
+            ])
+        }
         DisplayState::Refreshing => Line::from(vec![
             Span::raw("  "),
             Span::styled(
@@ -100,19 +99,33 @@ pub fn status_title(
             Span::styled("refreshing…", theme.secondary()),
             Span::raw("  ──"),
         ]),
-
-        DisplayState::Stale(_) => Line::from(vec![
+        DisplayState::Stale(_) => {
+            let fetched_at = state.snapshot.as_ref()?.fetched_at;
+            Line::from(vec![
+                Span::raw("  "),
+                Span::styled("● ", theme.provider_border(id)),
+                Span::styled(
+                    format!("updated {}   ", format_age(fetched_at, now)),
+                    theme.secondary(),
+                ),
+                Span::styled("⚠ stale", theme.warning()),
+                Span::raw("  ──"),
+            ])
+        }
+        DisplayState::Unavailable(error) => Line::from(vec![
             Span::raw("  "),
-            Span::styled("● ", theme.provider_border(id)),
-            Span::styled(
-                format!("updated {}   ", format_age(fetched_at, now)),
-                theme.secondary(),
-            ),
-            Span::styled("⚠ stale", theme.warning()),
+            Span::styled(format!("⚠ {}", error_title(error)), theme.error()),
             Span::raw("  ──"),
         ]),
-
-        DisplayState::Unavailable(_) | DisplayState::Loading => return None,
+        DisplayState::Loading => Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                format!("{} ", spinner_symbol(spinner_frame)),
+                theme.provider_border(id),
+            ),
+            Span::styled("loading…", theme.secondary()),
+            Span::raw("  ──"),
+        ]),
     };
 
     Some(line)
@@ -788,5 +801,24 @@ mod tests {
         assert!(text.contains("│▓"), "bars must have vertical border caps");
         assert!(text.contains("5 hour"));
         assert!(text.contains("Weekly"));
+    }
+
+    #[test]
+    fn status_title_is_available_without_a_snapshot() {
+        let now = Utc.timestamp_opt(1_788_000_000, 0).single().unwrap();
+        let mut app = App::new();
+        let theme = Theme::new(ColorMode::None);
+
+        let loading =
+            status_title(ProviderId::Codex, app.provider(ProviderId::Codex), theme, now, 0)
+                .expect("loading status must be visible on a collapsed card");
+        assert!(plain(&[loading]).contains("loading"));
+
+        app.request_refresh();
+        app.finish_refresh(ProviderId::Codex, Err(ProviderError::NotAuthenticated));
+        let unavailable =
+            status_title(ProviderId::Codex, app.provider(ProviderId::Codex), theme, now, 0)
+                .expect("unavailable status must be visible on a collapsed card");
+        assert!(plain(&[unavailable]).contains("Not authenticated"));
     }
 }
