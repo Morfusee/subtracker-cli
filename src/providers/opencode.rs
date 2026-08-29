@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use reqwest::{Client, StatusCode};
 use serde::Deserialize;
+use serde_json::Value;
 use std::{fmt, path::PathBuf, time::Duration};
 use url::Url;
 
@@ -43,11 +44,22 @@ impl OpenCodeProvider {
     }
 
     async fn load_auth(&self) -> Result<OpenCodeAuth, ProviderError> {
-        let input = tokio::fs::read_to_string(&self.auth_path)
-            .await
-            .map_err(|_| ProviderError::CredentialsNotFound)?;
+        if let Ok(input) = tokio::fs::read_to_string(&self.auth_path).await {
+            if let Ok(auth) = parse_auth(&input) {
+                return Ok(auth);
+            }
+        }
 
-        parse_auth(&input)
+        if let Some(parent) = self.auth_path.parent() {
+            let account_path = parent.join("account.json");
+            if let Ok(input) = tokio::fs::read_to_string(&account_path).await {
+                if let Ok(auth) = parse_auth(&input) {
+                    return Ok(auth);
+                }
+            }
+        }
+
+        Err(ProviderError::CredentialsNotFound)
     }
 }
 
@@ -110,17 +122,6 @@ impl fmt::Debug for OpenCodeAuth {
 }
 
 #[derive(Deserialize)]
-struct AuthFile {
-    opencode: Option<OpenCodeCredentials>,
-    key: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct OpenCodeCredentials {
-    key: Option<String>,
-}
-
-#[derive(Deserialize)]
 struct UsageResponse {
     usage: UsageData,
 }
@@ -140,17 +141,80 @@ struct UsageWindow {
 }
 
 pub fn parse_auth(input: &str) -> Result<OpenCodeAuth, ProviderError> {
-    let parsed: AuthFile =
+    let value: Value =
         serde_json::from_str(input).map_err(|_| ProviderError::CredentialsNotFound)?;
 
-    let api_key = parsed
-        .opencode
-        .and_then(|c| c.key)
-        .or(parsed.key)
-        .filter(|k| !k.is_empty())
-        .ok_or(ProviderError::CredentialsNotFound)?;
+    if let Some(key) = extract_key(&value) {
+        return Ok(OpenCodeAuth { api_key: key });
+    }
 
-    Ok(OpenCodeAuth { api_key })
+    Err(ProviderError::CredentialsNotFound)
+}
+
+fn extract_key(value: &Value) -> Option<String> {
+    match value {
+        Value::Object(map) => {
+            let candidates = ["opencode-go", "opencode", "opencode_go", "zen", "go"];
+            for candidate in candidates {
+                if let Some(entry) = map.get(candidate) {
+                    if let Some(key) = entry.get("key").and_then(Value::as_str) {
+                        if !key.is_empty() {
+                            return Some(key.to_string());
+                        }
+                    }
+                    if let Some(key) = entry.get("apiKey").and_then(Value::as_str) {
+                        if !key.is_empty() {
+                            return Some(key.to_string());
+                        }
+                    }
+                    if let Some(key) = entry.as_str() {
+                        if !key.is_empty() {
+                            return Some(key.to_string());
+                        }
+                    }
+                }
+            }
+
+            if let Some(key) = map.get("key").and_then(Value::as_str) {
+                if !key.is_empty() {
+                    return Some(key.to_string());
+                }
+            }
+            if let Some(key) = map.get("apiKey").and_then(Value::as_str) {
+                if !key.is_empty() {
+                    return Some(key.to_string());
+                }
+            }
+
+            for (prop_name, prop_val) in map {
+                if prop_name.contains("opencode") || prop_name.contains("zen") {
+                    if let Some(key) = prop_val.get("key").and_then(Value::as_str) {
+                        if !key.is_empty() {
+                            return Some(key.to_string());
+                        }
+                    }
+                    if let Some(key) = prop_val.get("apiKey").and_then(Value::as_str) {
+                        if !key.is_empty() {
+                            return Some(key.to_string());
+                        }
+                    }
+                }
+                if let Some(found) = extract_key(prop_val) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        Value::Array(arr) => {
+            for item in arr {
+                if let Some(found) = extract_key(item) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
 }
 
 pub fn parse_usage(
@@ -213,7 +277,7 @@ mod tests {
     use chrono::{TimeZone, Utc};
 
     #[test]
-    fn parses_opencode_auth_without_exposing_key_in_debug() {
+    fn parses_opencode_auth_with_opencode_key_without_exposing_in_debug() {
         let auth = parse_auth(include_str!(
             "../../tests/fixtures/opencode/auth-success.json"
         ))
@@ -223,6 +287,30 @@ mod tests {
 
         let debug = format!("{auth:?}");
         assert!(!debug.contains("sk-opencode-fixture-key"));
+    }
+
+    #[test]
+    fn parses_opencode_auth_with_opencode_go_key() {
+        let json = r#"{"opencode-go": {"type": "api", "key": "sk-opencode-go-12345"}}"#;
+        let auth = parse_auth(json).unwrap();
+        assert_eq!(auth.api_key(), "sk-opencode-go-12345");
+    }
+
+    #[test]
+    fn parses_opencode_account_json_structure() {
+        let json = r#"{
+            "version": 2,
+            "active": {"opencode-go": "acc-1"},
+            "accounts": {
+                "acc-1": {
+                    "id": "acc-1",
+                    "serviceID": "opencode-go",
+                    "credential": {"key": "sk-opencode-from-account"}
+                }
+            }
+        }"#;
+        let auth = parse_auth(json).unwrap();
+        assert_eq!(auth.api_key(), "sk-opencode-from-account");
     }
 
     #[test]
