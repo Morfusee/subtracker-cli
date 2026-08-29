@@ -1,6 +1,6 @@
 [package]
 name = "subtracker"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 authors = ["Morfusee <markvalenzuela.coding@gmail.com>"]
 description = "A responsive terminal UI dashboard for tracking AI subscription quotas (Codex, OpenCode, Antigravity)"
