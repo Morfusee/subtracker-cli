@@ -70,7 +70,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
     let required_height = heights
         .into_iter()
         .fold(0u16, u16::saturating_add)
-        .saturating_add(2) // two one-row gaps
+        .saturating_add(3) // three one-row gaps (between cards + before footer)
         .saturating_add(1); // footer
 
     if required_height > area.height {
@@ -84,8 +84,9 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
         Constraint::Length(heights[1]),
         Constraint::Length(1),
         Constraint::Length(heights[2]),
-        Constraint::Min(0),
         Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Min(0),
     ];
 
     let areas = Layout::default()
@@ -115,13 +116,36 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
 }
 
 fn footer(mode: LayoutMode, theme: Theme) -> Paragraph<'static> {
-    let text = match mode {
-        LayoutMode::Wide => "[r] refresh        ◷ auto 60s        [q] quit",
-        LayoutMode::Compact => "[r] refresh   60s auto   [q] quit",
-        LayoutMode::Narrow => "[r] refresh   [q] quit",
+    let spans = match mode {
+        LayoutMode::Wide => vec![
+            Span::styled("[r]", theme.primary()),
+            Span::styled(" refresh        ", theme.secondary()),
+            Span::styled("◷ auto 60s        ", theme.secondary()),
+            Span::styled("[q]", theme.primary()),
+            Span::styled(" quit        ", theme.secondary()),
+            Span::styled("[Ctrl+C]", theme.primary()),
+            Span::styled(" exit", theme.secondary()),
+        ],
+        LayoutMode::Compact => vec![
+            Span::styled("[r]", theme.primary()),
+            Span::styled(" refresh   ", theme.secondary()),
+            Span::styled("60s auto   ", theme.secondary()),
+            Span::styled("[q]", theme.primary()),
+            Span::styled(" quit   ", theme.secondary()),
+            Span::styled("[Ctrl+C]", theme.primary()),
+            Span::styled(" exit", theme.secondary()),
+        ],
+        LayoutMode::Narrow => vec![
+            Span::styled("[r]", theme.primary()),
+            Span::styled(" refresh   ", theme.secondary()),
+            Span::styled("[q]", theme.primary()),
+            Span::styled(" quit   ", theme.secondary()),
+            Span::styled("[^C]", theme.primary()),
+            Span::styled(" exit", theme.secondary()),
+        ],
     };
 
-    Paragraph::new(Line::from(Span::styled(text, theme.secondary()))).alignment(Alignment::Center)
+    Paragraph::new(Line::from(spans)).alignment(Alignment::Center)
 }
 
 fn render_minimum_size_message(frame: &mut Frame, area: Rect, theme: Theme) {
