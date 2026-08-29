@@ -88,7 +88,7 @@ fn quota_lines(
                 };
 
                 let mut spans = vec![
-                    Span::raw("  "),
+                    Span::raw("    "),
                     Span::styled(
                         format!("{:<width$}", quota.label, width = label_width),
                         theme.primary(),
@@ -112,19 +112,19 @@ fn quota_lines(
             }
             LayoutMode::Narrow => {
                 lines.push(Line::from(vec![
-                    Span::raw("  "),
+                    Span::raw("    "),
                     Span::styled(quota.label.clone(), theme.primary()),
                 ]));
 
-                let bar_width = inner_width.saturating_sub(12).clamp(8, 24);
+                let bar_width = inner_width.saturating_sub(18).clamp(8, 24);
 
-                let mut bar_spans = vec![Span::raw("  ")];
+                let mut bar_spans = vec![Span::raw("    ")];
                 bar_spans.extend(QuotaBar::new(remaining).spans(bar_width, theme));
                 lines.push(Line::from(bar_spans));
 
                 if let Some(reset) = quota.resets_at {
                     lines.push(Line::from(vec![
-                        Span::raw("  "),
+                        Span::raw("    "),
                         Span::styled(
                             format!("resets in {}", format_reset(reset, now)),
                             theme.secondary(),
@@ -175,7 +175,7 @@ fn stat_value(snapshot: &ProviderSnapshot, label: &str) -> String {
 
 fn stat_line(label: &str, value: &str, theme: Theme) -> Line<'static> {
     Line::from(vec![
-        Span::raw("  "),
+        Span::raw("    "),
         Span::styled(format!("{label:<12}"), theme.secondary()),
         Span::styled(value.to_owned(), theme.primary()),
     ])
@@ -189,7 +189,7 @@ fn stat_grid_line(
     theme: Theme,
 ) -> Line<'static> {
     Line::from(vec![
-        Span::raw("  "),
+        Span::raw("    "),
         Span::styled(format!("{left_label:<12}"), theme.secondary()),
         Span::styled(format!("{left_value:<18}"), theme.primary()),
         Span::styled("│  ", theme.secondary()),
@@ -218,7 +218,7 @@ fn status_line(
                 format!("updated {}", format_age(fetched_at, now)),
                 theme.secondary(),
             ),
-            Span::raw("  "),
+            Span::raw("    "),
         ])
         .alignment(Alignment::Right),
 
@@ -228,7 +228,7 @@ fn status_line(
                 theme.provider_border(id),
             ),
             Span::styled("refreshing…", theme.secondary()),
-            Span::raw("  "),
+            Span::raw("    "),
         ])
         .alignment(Alignment::Right),
 
@@ -239,7 +239,7 @@ fn status_line(
                 theme.secondary(),
             ),
             Span::styled("⚠ stale", theme.warning()),
-            Span::raw("  "),
+            Span::raw("    "),
         ])
         .alignment(Alignment::Right),
 
