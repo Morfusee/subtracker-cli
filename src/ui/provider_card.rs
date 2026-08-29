@@ -38,7 +38,7 @@ pub fn content_lines(
 
     let snapshot = state.snapshot.as_ref().expect("snapshot checked above");
 
-    let mut lines = match id {
+    match id {
         ProviderId::Codex | ProviderId::Antigravity => {
             quota_lines(snapshot, mode, inner_width, theme, now)
         }
@@ -49,11 +49,55 @@ pub fn content_lines(
                 open_code_lines(snapshot, mode, theme)
             }
         }
+    }
+}
+
+pub fn status_title(
+    id: ProviderId,
+    state: &ProviderState,
+    theme: Theme,
+    now: DateTime<Utc>,
+    spinner_frame: u8,
+) -> Option<Line<'static>> {
+    let snapshot = state.snapshot.as_ref()?;
+    let fetched_at = snapshot.fetched_at;
+
+    let line = match &state.display {
+        DisplayState::Ready => Line::from(vec![
+            Span::raw("  "),
+            Span::styled("● ", theme.provider_border(id)),
+            Span::styled(
+                format!("updated {}", format_age(fetched_at, now)),
+                theme.secondary(),
+            ),
+            Span::raw("  ──"),
+        ]),
+
+        DisplayState::Refreshing => Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                format!("{} ", spinner_symbol(spinner_frame)),
+                theme.provider_border(id),
+            ),
+            Span::styled("refreshing…", theme.secondary()),
+            Span::raw("  ──"),
+        ]),
+
+        DisplayState::Stale(_) => Line::from(vec![
+            Span::raw("  "),
+            Span::styled("● ", theme.provider_border(id)),
+            Span::styled(
+                format!("updated {}   ", format_age(fetched_at, now)),
+                theme.secondary(),
+            ),
+            Span::styled("⚠ stale", theme.warning()),
+            Span::raw("  ──"),
+        ]),
+
+        DisplayState::Unavailable(_) | DisplayState::Loading => return None,
     };
 
-    lines.push(status_line(id, state, theme, now, spinner_frame));
-
-    lines
+    Some(line)
 }
 
 fn quota_lines(
@@ -196,59 +240,6 @@ fn stat_grid_line(
         Span::styled(format!("{right_label:<10}"), theme.secondary()),
         Span::styled(right_value.to_owned(), theme.primary()),
     ])
-}
-
-fn status_line(
-    id: ProviderId,
-    state: &ProviderState,
-    theme: Theme,
-    now: DateTime<Utc>,
-    spinner_frame: u8,
-) -> Line<'static> {
-    let fetched_at = state
-        .snapshot
-        .as_ref()
-        .expect("status line requires snapshot")
-        .fetched_at;
-
-    match &state.display {
-        DisplayState::Ready => Line::from(vec![
-            Span::styled("● ", theme.provider_border(id)),
-            Span::styled(
-                format!("updated {}", format_age(fetched_at, now)),
-                theme.secondary(),
-            ),
-            Span::raw("    "),
-        ])
-        .alignment(Alignment::Right),
-
-        DisplayState::Refreshing => Line::from(vec![
-            Span::styled(
-                format!("{} ", spinner_symbol(spinner_frame)),
-                theme.provider_border(id),
-            ),
-            Span::styled("refreshing…", theme.secondary()),
-            Span::raw("    "),
-        ])
-        .alignment(Alignment::Right),
-
-        DisplayState::Stale(_) => Line::from(vec![
-            Span::styled("● ", theme.provider_border(id)),
-            Span::styled(
-                format!("updated {}   ", format_age(fetched_at, now)),
-                theme.secondary(),
-            ),
-            Span::styled("⚠ stale", theme.warning()),
-            Span::raw("    "),
-        ])
-        .alignment(Alignment::Right),
-
-        DisplayState::Unavailable(error) => {
-            Line::from(Span::styled(error_title(error), theme.error())).alignment(Alignment::Right)
-        }
-
-        DisplayState::Loading => Line::from(""),
-    }
 }
 
 fn empty_state_lines(
@@ -407,7 +398,17 @@ mod tests {
         assert!(text.contains("65%"));
         assert!(text.contains("remaining"));
         assert!(text.contains("◷ 1h 0m"));
-        assert!(text.contains("● updated just now"));
+
+        let status = status_title(
+            ProviderId::Codex,
+            app.provider(ProviderId::Codex),
+            Theme::new(ColorMode::None),
+            now,
+            0,
+        )
+        .expect("status title present");
+        let status_text = plain(&[status]);
+        assert!(status_text.contains("● updated just now"));
     }
 
     #[test]
@@ -463,8 +464,18 @@ mod tests {
         ));
 
         assert!(text.contains("65%"));
-        assert!(text.contains("updated 3m ago"));
-        assert!(text.contains("stale"));
+
+        let status = status_title(
+            ProviderId::Codex,
+            app.provider(ProviderId::Codex),
+            Theme::new(ColorMode::None),
+            now + chrono::Duration::minutes(3),
+            0,
+        )
+        .expect("status title present");
+        let status_text = plain(&[status]);
+        assert!(status_text.contains("updated 3m ago"));
+        assert!(status_text.contains("stale"));
     }
 
     #[test]
