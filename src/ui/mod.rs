@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::Modifier,
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
 };
@@ -106,8 +107,14 @@ impl DashboardLayout {
             now,
             spinner_frame,
         };
-        let cards =
-            ProviderId::ALL.map(|id| (id, provider_card::content_lines(id, app.provider(id), cx)));
+        let cards = ProviderId::ALL.map(|id| {
+            let lines = if app.is_collapsed(id) {
+                Vec::new()
+            } else {
+                provider_card::content_lines(id, app.provider(id), cx)
+            };
+            (id, lines)
+        });
         let heights = cards.each_ref().map(|(_, lines)| {
             u16::try_from(lines.len())
                 .unwrap_or(u16::MAX)
@@ -212,16 +219,38 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
         let (id, lines) = &layout.cards[card_index];
         let provider_state = app.provider(*id);
 
+        let focused = app.is_focused(*id);
+        let collapsed = app.is_collapsed(*id);
+        let focus_marker = if focused { "▸ " } else { "  " };
+        let collapse_marker = if collapsed { "[+]" } else { "[-]" };
+        let title_style = if focused {
+            theme
+                .provider_title(*id)
+                .add_modifier(Modifier::REVERSED)
+        } else {
+            theme.provider_title(*id)
+        };
+        let border_style = if focused {
+            theme
+                .provider_border(*id)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            theme.provider_border(*id)
+        };
+
         let top_title = Line::from(vec![
             Span::raw("──  "),
-            Span::styled(id.display_name(), theme.provider_title(*id)),
+            Span::styled(
+                format!("{focus_marker}{collapse_marker} {}", id.display_name()),
+                title_style,
+            ),
             Span::raw("  "),
         ]);
 
         let mut block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(theme.provider_border(*id))
+            .border_style(border_style)
             .padding(ratatui::widgets::Padding::horizontal(
                 layout.density.card_padding(),
             ))
@@ -273,30 +302,34 @@ fn header(theme: Theme) -> Paragraph<'static> {
 fn footer(mode: LayoutMode, theme: Theme) -> Paragraph<'static> {
     let spans = match mode {
         LayoutMode::Wide => vec![
+            Span::styled("[j/k/↑/↓]", theme.primary()),
+            Span::styled(" select   ", theme.secondary()),
+            Span::styled("[Space/Enter]", theme.primary()),
+            Span::styled(" collapse   ", theme.secondary()),
             Span::styled("[r]", theme.primary()),
-            Span::styled(" refresh        ", theme.secondary()),
-            Span::styled("◷ auto 60s        ", theme.secondary()),
+            Span::styled(" refresh   ", theme.secondary()),
             Span::styled("[q]", theme.primary()),
-            Span::styled(" quit        ", theme.secondary()),
-            Span::styled("[Ctrl+C]", theme.primary()),
-            Span::styled(" exit", theme.secondary()),
+            Span::styled(" quit", theme.secondary()),
         ],
         LayoutMode::Compact => vec![
+            Span::styled("[j/k/↑/↓]", theme.primary()),
+            Span::styled(" select  ", theme.secondary()),
+            Span::styled("[Space/Enter]", theme.primary()),
+            Span::styled(" toggle  ", theme.secondary()),
             Span::styled("[r]", theme.primary()),
-            Span::styled(" refresh   ", theme.secondary()),
-            Span::styled("60s auto   ", theme.secondary()),
+            Span::styled(" refresh  ", theme.secondary()),
             Span::styled("[q]", theme.primary()),
-            Span::styled(" quit   ", theme.secondary()),
-            Span::styled("[Ctrl+C]", theme.primary()),
-            Span::styled(" exit", theme.secondary()),
+            Span::styled(" quit", theme.secondary()),
         ],
         LayoutMode::Narrow => vec![
+            Span::styled("[j/k]", theme.primary()),
+            Span::styled(" move  ", theme.secondary()),
+            Span::styled("[Space]", theme.primary()),
+            Span::styled(" toggle  ", theme.secondary()),
             Span::styled("[r]", theme.primary()),
-            Span::styled(" refresh   ", theme.secondary()),
+            Span::styled(" refresh  ", theme.secondary()),
             Span::styled("[q]", theme.primary()),
-            Span::styled(" quit   ", theme.secondary()),
-            Span::styled("[^C]", theme.primary()),
-            Span::styled(" exit", theme.secondary()),
+            Span::styled(" quit", theme.secondary()),
         ],
     };
 
@@ -532,8 +565,9 @@ mod tests {
         assert!(text.contains("65%"));
         assert!(text.contains("312.3M tokens"));
         assert!(!text.contains("remaining"));
+        assert!(text.contains("[j/k/↑/↓] select"));
+        assert!(text.contains("[Space/Enter] collapse"));
         assert!(text.contains("[r] refresh"));
-        assert!(text.contains("auto 60s"));
         assert!(text.contains("[q] quit"));
     }
 
@@ -553,6 +587,8 @@ mod tests {
         let text = buffer_text(&terminal);
 
         assert!(text.contains("resets in"));
+        assert!(text.contains("[j/k] move"));
+        assert!(text.contains("[Space] toggle"));
         assert!(text.contains("[r] refresh"));
         assert!(text.contains("[q] quit"));
         assert!(!text.contains("auto 60s"));
@@ -661,5 +697,48 @@ mod tests {
         assert!(
             text.contains("CODEX") || text.contains("OPENCODE") || text.contains("ANTIGRAVITY")
         );
+    }
+
+    #[test]
+    fn collapsed_card_has_border_only_height_and_no_body_lines() {
+        let now = Utc.timestamp_opt(1_788_000_000, 0).single().unwrap();
+        let mut app = ready_app(now);
+        app.toggle_focused_collapse();
+
+        let layout = DashboardLayout::new(
+            &app,
+            Rect::new(0, 0, 120, 50),
+            LayoutMode::Wide,
+            Density::Normal,
+            Theme::new(ColorMode::None),
+            now,
+            0,
+        );
+
+        assert!(layout.cards[0].1.is_empty());
+        assert_eq!(layout.heights[0], 2);
+        assert!(!layout.cards[1].1.is_empty());
+    }
+
+    #[test]
+    fn rendered_titles_show_focus_and_collapse_state() {
+        let now = Utc.timestamp_opt(1_788_000_000, 0).single().unwrap();
+        let backend = TestBackend::new(120, 50);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = ready_app(now);
+
+        terminal
+            .draw(|frame| render(frame, &app, now, 0, Theme::new(ColorMode::None)))
+            .unwrap();
+        assert!(buffer_text(&terminal).contains("▸ [-] CODEX"));
+
+        app.toggle_focused_collapse();
+        app.next_provider();
+        terminal
+            .draw(|frame| render(frame, &app, now, 0, Theme::new(ColorMode::None)))
+            .unwrap();
+        let text = buffer_text(&terminal);
+        assert!(text.contains("[+] CODEX"));
+        assert!(text.contains("▸ [-] OPENCODE"));
     }
 }
