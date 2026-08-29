@@ -79,7 +79,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
         return;
     }
 
-    let show_header = area.height >= cards_required_height.saturating_add(7);
+    let show_header = area.height >= cards_required_height.saturating_add(11);
     let total_required_height = if show_header {
         cards_required_height.saturating_add(7)
     } else {
