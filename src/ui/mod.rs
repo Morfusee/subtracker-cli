@@ -46,7 +46,8 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
     }
 
     let mode = LayoutMode::for_width(area.width);
-    let inner_width = area.width.saturating_sub(6);
+    let content_width = area.width.min(120);
+    let inner_width = content_width.saturating_sub(6);
 
     let cards = ProviderId::ALL.map(|id| {
         let lines = provider_card::content_lines(
@@ -78,6 +79,16 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
         return;
     }
 
+    let h_offset = (area.width.saturating_sub(content_width)) / 2;
+    let v_offset = (area.height.saturating_sub(required_height)) / 2;
+
+    let centered_area = Rect {
+        x: area.x + h_offset,
+        y: area.y + v_offset,
+        width: content_width,
+        height: required_height,
+    };
+
     let constraints = vec![
         Constraint::Length(heights[0]),
         Constraint::Length(1),
@@ -86,13 +97,12 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
         Constraint::Length(heights[2]),
         Constraint::Length(1),
         Constraint::Length(1),
-        Constraint::Min(0),
     ];
 
     let areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
-        .split(area);
+        .split(centered_area);
 
     for (card_index, area_index) in [(0, 0), (1, 2), (2, 4)] {
         let (id, lines) = &cards[card_index];
