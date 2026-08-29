@@ -1,10 +1,90 @@
+use async_trait::async_trait;
 use chrono::{DateTime, TimeZone, Utc};
+use reqwest::{Client, StatusCode};
 use serde::Deserialize;
-use std::fmt;
+use std::{fmt, path::PathBuf, time::Duration};
+use url::Url;
 
 use crate::model::{ProviderId, ProviderSnapshot, QuotaWindow};
 
-use super::ProviderError;
+use super::{ProviderError, UsageProvider};
+
+pub const DEFAULT_ENDPOINT: &str = "https://chatgpt.com/backend-api/wham/usage";
+
+pub struct CodexProvider {
+    client: Client,
+    auth_path: PathBuf,
+    endpoint: Url,
+}
+
+impl CodexProvider {
+    pub fn new(client: Client, auth_path: PathBuf, endpoint: Url) -> Self {
+        Self {
+            client,
+            auth_path,
+            endpoint,
+        }
+    }
+
+    pub fn production() -> Result<Self, ProviderError> {
+        let home = dirs::home_dir().ok_or(ProviderError::CredentialsNotFound)?;
+        let auth_path = home.join(".codex").join("auth.json");
+        let endpoint = Url::parse(DEFAULT_ENDPOINT).map_err(|_| ProviderError::Network)?;
+        let client = Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .map_err(|_| ProviderError::Network)?;
+
+        Ok(Self::new(client, auth_path, endpoint))
+    }
+
+    async fn load_auth(&self) -> Result<CodexAuth, ProviderError> {
+        let input = tokio::fs::read_to_string(&self.auth_path)
+            .await
+            .map_err(|_| ProviderError::CredentialsNotFound)?;
+
+        parse_auth(&input)
+    }
+}
+
+#[async_trait]
+impl UsageProvider for CodexProvider {
+    fn id(&self) -> ProviderId {
+        ProviderId::Codex
+    }
+
+    async fn fetch(&self) -> Result<ProviderSnapshot, ProviderError> {
+        let auth = self.load_auth().await?;
+
+        let response = self
+            .client
+            .get(self.endpoint.clone())
+            .header(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {}", auth.access_token()),
+            )
+            .header("ChatGPT-Account-Id", auth.account_id())
+            .header(reqwest::header::ACCEPT, "application/json")
+            .send()
+            .await
+            .map_err(|_| ProviderError::Network)?;
+
+        if matches!(
+            response.status(),
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+        ) {
+            return Err(ProviderError::NotAuthenticated);
+        }
+
+        if !response.status().is_success() {
+            return Err(ProviderError::Network);
+        }
+
+        let body = response.text().await.map_err(|_| ProviderError::Network)?;
+
+        parse_usage(&body, Utc::now())
+    }
+}
 
 #[derive(Clone)]
 pub struct CodexAuth {
