@@ -68,43 +68,60 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
             .saturating_add(2)
     });
 
-    let required_height = heights
+    let cards_required_height = heights
         .into_iter()
         .fold(0u16, u16::saturating_add)
         .saturating_add(3) // three one-row gaps (between cards + before footer)
         .saturating_add(1); // footer
 
-    if required_height > area.height {
+    if cards_required_height > area.height {
         render_content_too_tall_message(frame, area, theme);
         return;
     }
 
+    let show_header = area.height >= cards_required_height.saturating_add(7);
+    let total_required_height = if show_header {
+        cards_required_height.saturating_add(7)
+    } else {
+        cards_required_height
+    };
+
     let h_offset = (area.width.saturating_sub(content_width)) / 2;
-    let v_offset = (area.height.saturating_sub(required_height)) / 2;
+    let v_offset = (area.height.saturating_sub(total_required_height)) / 2;
 
     let centered_area = Rect {
         x: area.x + h_offset,
         y: area.y + v_offset,
         width: content_width,
-        height: required_height,
+        height: total_required_height,
     };
 
-    let constraints = vec![
-        Constraint::Length(heights[0]),
-        Constraint::Length(1),
-        Constraint::Length(heights[1]),
-        Constraint::Length(1),
-        Constraint::Length(heights[2]),
-        Constraint::Length(1),
-        Constraint::Length(1),
-    ];
+    let mut constraints = Vec::new();
+    if show_header {
+        constraints.push(Constraint::Length(6)); // 0: Header
+        constraints.push(Constraint::Length(1)); // 1: Gap
+    }
+    constraints.push(Constraint::Length(heights[0])); // Card 0
+    constraints.push(Constraint::Length(1)); // Gap
+    constraints.push(Constraint::Length(heights[1])); // Card 1
+    constraints.push(Constraint::Length(1)); // Gap
+    constraints.push(Constraint::Length(heights[2])); // Card 2
+    constraints.push(Constraint::Length(1)); // Gap
+    constraints.push(Constraint::Length(1)); // Footer
 
     let areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
         .split(centered_area);
 
-    for (card_index, area_index) in [(0, 0), (1, 2), (2, 4)] {
+    let offset = if show_header {
+        frame.render_widget(header(theme), areas[0]);
+        2
+    } else {
+        0
+    };
+
+    for (card_index, area_index) in [(0, offset), (1, offset + 2), (2, offset + 4)] {
         let (id, lines) = &cards[card_index];
 
         let title = Line::from(Span::styled(id.display_name(), theme.provider_title(*id)));
@@ -122,7 +139,42 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
         );
     }
 
-    frame.render_widget(footer(mode, theme), areas[6]);
+    frame.render_widget(footer(mode, theme), areas[offset + 6]);
+}
+
+fn header(theme: Theme) -> Paragraph<'static> {
+    let logo_style = theme.provider_border(ProviderId::OpenCode);
+    let lines = vec![
+        Line::from(Span::styled(
+            "███████╗████████╗ ██████╗                   ",
+            logo_style,
+        )),
+        Line::from(vec![
+            Span::styled("██╔════╝╚══██╔══╝██╔════╝   ", logo_style),
+            Span::styled(
+                "SUBTRACKER      ",
+                theme.primary().add_modifier(ratatui::style::Modifier::BOLD),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("███████╗   ██║   ██║        ", logo_style),
+            Span::styled("AI Usage Monitor", theme.secondary()),
+        ]),
+        Line::from(Span::styled(
+            "╚════██║   ██║   ██║                        ",
+            logo_style,
+        )),
+        Line::from(Span::styled(
+            "███████║   ██║   ╚██████╗                   ",
+            logo_style,
+        )),
+        Line::from(Span::styled(
+            "╚══════╝   ╚═╝    ╚═════╝                   ",
+            logo_style,
+        )),
+    ];
+
+    Paragraph::new(lines).alignment(Alignment::Center)
 }
 
 fn footer(mode: LayoutMode, theme: Theme) -> Paragraph<'static> {
