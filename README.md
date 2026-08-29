@@ -108,6 +108,36 @@ or on Windows:
 target\release\stc.exe
 ```
 
+## Appearance
+
+The TUI uses provider accent colors and semantic quota colors. It keeps the terminal's existing background and requires no Nerd Font.
+
+Subtracker also respects the conventional `NO_COLOR` environment variable:
+
+macOS:
+
+```text
+NO_COLOR=1 stc
+```
+
+Windows PowerShell:
+
+```text
+$env:NO_COLOR = "1"
+stc
+```
+
+Responsive modes:
+
+```text
+Wide      >= 100 columns
+Compact   70-99 columns
+Narrow    < 70 columns
+```
+
+Below 60 columns or 20 rows, Subtracker renders a terminal-too-small message. If the current provider data needs more vertical rows than are available, it asks for additional height rather than clipping the dashboard.
+
 ## v1 boundaries
 
 Subtracker does not store provider credentials, manage accounts, refresh Codex OAuth, persist usage history, run a daemon, or provide a desktop/tray UI.
+

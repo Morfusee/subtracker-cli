@@ -16,7 +16,7 @@ use subtracker_cli::{
     refresh::ProviderRegistry,
     runtime::RuntimeController,
     terminal::{CrosstermOps, TerminalGuard},
-    ui,
+    ui::{self, theme::Theme},
 };
 
 #[tokio::main]
@@ -30,15 +30,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (mut runtime, mut refresh_results) = RuntimeController::new(providers);
     let mut events = EventStream::new();
 
-    let period = Duration::from_secs(60);
-    let mut refresh_timer = interval_at(Instant::now() + period, period);
+    let refresh_period = Duration::from_secs(60);
+    let mut refresh_timer = interval_at(Instant::now() + refresh_period, refresh_period);
     refresh_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+    let animation_period = Duration::from_millis(250);
+    let mut animation_timer = interval_at(Instant::now() + animation_period, animation_period);
+    animation_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+    let theme = Theme::detect();
+    let mut spinner_frame = 0u8;
 
     runtime.request_refresh();
 
     loop {
         terminal.draw(|frame| {
-            ui::render(frame, runtime.app(), Utc::now());
+            ui::render(frame, runtime.app(), Utc::now(), spinner_frame, theme);
         })?;
 
         tokio::select! {
@@ -57,9 +64,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     None => break,
                 }
             }
+
             _ = refresh_timer.tick() => {
                 runtime.request_refresh();
             }
+
+            _ = animation_timer.tick() => {
+                spinner_frame = spinner_frame.wrapping_add(1);
+            }
+
             refresh = refresh_results.recv() => {
                 if let Some(refresh) = refresh {
                     runtime.apply_refresh_result(refresh);

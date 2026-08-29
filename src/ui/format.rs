@@ -2,19 +2,6 @@ use chrono::{DateTime, Utc};
 
 use crate::model::UsageValue;
 
-pub fn quota_bar(remaining_percent: f64) -> String {
-    let remaining = remaining_percent.clamp(0.0, 100.0);
-    let filled = ((remaining / 100.0) * 10.0).round() as usize;
-    let empty = 10usize.saturating_sub(filled);
-
-    format!(
-        "[{}{}] {:.0}% remaining",
-        "#".repeat(filled),
-        "-".repeat(empty),
-        remaining
-    )
-}
-
 pub fn format_reset(resets_at: DateTime<Utc>, now: DateTime<Utc>) -> String {
     let seconds = (resets_at - now).num_seconds();
     if seconds <= 0 {
@@ -30,29 +17,34 @@ pub fn format_reset(resets_at: DateTime<Utc>, now: DateTime<Utc>) -> String {
     } else if hours > 0 {
         format!("{hours}h {minutes}m")
     } else {
-        format!("{minutes}m")
+        format!("{}m", minutes.max(1))
     }
 }
 
 pub fn format_age(fetched_at: DateTime<Utc>, now: DateTime<Utc>) -> String {
     let seconds = (now - fetched_at).num_seconds().max(0);
+
     if seconds < 60 {
         "just now".into()
     } else if seconds < 3_600 {
         format!("{}m ago", seconds / 60)
-    } else {
+    } else if seconds < 86_400 {
         format!("{}h ago", seconds / 3_600)
+    } else {
+        format!("{}d ago", seconds / 86_400)
     }
 }
 
 pub fn format_usage_value(value: &UsageValue) -> String {
     match value {
-        UsageValue::Count(value) => value.to_string(),
+        UsageValue::Count(value) => group_digits(*value),
         UsageValue::Tokens(value) => {
             format!("{} tokens", compact_number(*value))
         }
         UsageValue::MoneyCents(cents) => {
-            format!("${}.{:02}", cents / 100, cents.abs() % 100)
+            let sign = if *cents < 0 { "-" } else { "" };
+            let absolute = cents.unsigned_abs();
+            format!("{sign}${}.{:02}", absolute / 100, absolute % 100)
         }
         UsageValue::Text(value) => value.clone(),
     }
@@ -60,11 +52,30 @@ pub fn format_usage_value(value: &UsageValue) -> String {
 
 fn compact_number(value: u64) -> String {
     match value {
-        1_000_000_000.. => format!("{:.1}B", value as f64 / 1_000_000_000.0).replace(".0B", "B"),
-        1_000_000.. => format!("{:.1}M", value as f64 / 1_000_000.0).replace(".0M", "M"),
-        1_000.. => format!("{:.1}K", value as f64 / 1_000.0).replace(".0K", "K"),
+        1_000_000_000.. => trim_suffix(format!("{:.1}", value as f64 / 1_000_000_000.0), "B"),
+        1_000_000.. => trim_suffix(format!("{:.1}", value as f64 / 1_000_000.0), "M"),
+        1_000.. => trim_suffix(format!("{:.1}", value as f64 / 1_000.0), "K"),
         _ => value.to_string(),
     }
+}
+
+fn trim_suffix(number: String, suffix: &str) -> String {
+    let number = number.strip_suffix(".0").unwrap_or(&number);
+    format!("{number}{suffix}")
+}
+
+fn group_digits(value: u64) -> String {
+    let digits = value.to_string();
+    let mut grouped = String::new();
+
+    for (index, character) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            grouped.push(',');
+        }
+        grouped.push(character);
+    }
+
+    grouped
 }
 
 #[cfg(test)]
@@ -74,25 +85,46 @@ mod tests {
     use chrono::{TimeZone, Utc};
 
     #[test]
-    fn quota_bar_shows_remaining_percentage() {
-        assert_eq!(quota_bar(72.0), "[#######---] 72% remaining");
-    }
-
-    #[test]
-    fn reset_time_is_relative_to_render_time() {
+    fn reset_time_is_compact_and_relative() {
         let now = Utc.timestamp_opt(1_788_000_000, 0).single().unwrap();
-        let reset = now + chrono::Duration::hours(2) + chrono::Duration::minutes(17);
 
-        assert_eq!(format_reset(reset, now), "2h 17m");
+        assert_eq!(
+            format_reset(
+                now + chrono::Duration::hours(2) + chrono::Duration::minutes(17),
+                now
+            ),
+            "2h 17m"
+        );
+        assert_eq!(
+            format_reset(
+                now + chrono::Duration::days(6) + chrono::Duration::hours(5),
+                now
+            ),
+            "6d 5h"
+        );
     }
 
     #[test]
-    fn usage_values_are_compact_and_human_readable() {
-        assert_eq!(format_usage_value(&UsageValue::Count(42)), "42");
+    fn update_age_uses_short_status_copy() {
+        let now = Utc.timestamp_opt(1_788_000_000, 0).single().unwrap();
+
+        assert_eq!(format_age(now, now), "just now");
         assert_eq!(
-            format_usage_value(&UsageValue::Tokens(599_000)),
-            "599K tokens"
+            format_age(now - chrono::Duration::minutes(3), now),
+            "3m ago"
         );
-        assert_eq!(format_usage_value(&UsageValue::MoneyCents(1234)), "$12.34");
+    }
+
+    #[test]
+    fn usage_values_match_the_designed_open_code_card() {
+        assert_eq!(format_usage_value(&UsageValue::Count(2_277)), "2,277");
+        assert_eq!(
+            format_usage_value(&UsageValue::Tokens(312_300_000)),
+            "312.3M tokens"
+        );
+        assert_eq!(
+            format_usage_value(&UsageValue::MoneyCents(12_050)),
+            "$120.50"
+        );
     }
 }

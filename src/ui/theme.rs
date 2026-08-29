@@ -1,0 +1,188 @@
+use ratatui::style::{Color, Modifier, Style};
+
+use crate::model::ProviderId;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ColorMode {
+    TrueColor,
+    Named,
+    None,
+}
+
+impl ColorMode {
+    pub fn detect_from(no_color: bool, colorterm: Option<&str>, windows_terminal: bool) -> Self {
+        if no_color {
+            return Self::None;
+        }
+
+        let colorterm = colorterm.unwrap_or_default().to_ascii_lowercase();
+        if colorterm.contains("truecolor") || colorterm.contains("24bit") || windows_terminal {
+            Self::TrueColor
+        } else {
+            Self::Named
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum QuotaHealth {
+    Healthy,
+    Moderate,
+    Low,
+    Critical,
+}
+
+impl QuotaHealth {
+    pub fn from_remaining(percent: f64) -> Self {
+        if percent >= 75.0 {
+            Self::Healthy
+        } else if percent >= 40.0 {
+            Self::Moderate
+        } else if percent >= 15.0 {
+            Self::Low
+        } else {
+            Self::Critical
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Theme {
+    mode: ColorMode,
+}
+
+impl Theme {
+    pub const fn new(mode: ColorMode) -> Self {
+        Self { mode }
+    }
+
+    pub fn detect() -> Self {
+        let no_color = std::env::var_os("NO_COLOR").is_some();
+        let colorterm = std::env::var("COLORTERM").ok();
+        let windows_terminal = std::env::var_os("WT_SESSION").is_some();
+
+        Self::new(ColorMode::detect_from(
+            no_color,
+            colorterm.as_deref(),
+            windows_terminal,
+        ))
+    }
+
+    pub fn provider_title(self, provider: ProviderId) -> Style {
+        self.provider_border(provider).add_modifier(Modifier::BOLD)
+    }
+
+    pub fn provider_border(self, provider: ProviderId) -> Style {
+        let rgb = match provider {
+            ProviderId::Codex => (56, 189, 248),
+            ProviderId::OpenCode => (45, 212, 191),
+            ProviderId::Antigravity => (192, 132, 252),
+        };
+
+        let named = match provider {
+            ProviderId::Codex => Color::Cyan,
+            ProviderId::OpenCode => Color::Green,
+            ProviderId::Antigravity => Color::Magenta,
+        };
+
+        self.style(rgb, named)
+    }
+
+    pub fn quota(self, remaining_percent: f64) -> Style {
+        match QuotaHealth::from_remaining(remaining_percent) {
+            QuotaHealth::Healthy => self.style((74, 222, 128), Color::Green),
+            QuotaHealth::Moderate => self.style((251, 191, 36), Color::Yellow),
+            QuotaHealth::Low => self.style((251, 146, 60), Color::DarkGray),
+            QuotaHealth::Critical => self.style((248, 113, 113), Color::Red),
+        }
+    }
+
+    pub fn primary(self) -> Style {
+        self.style((229, 231, 235), Color::White)
+    }
+
+    pub fn secondary(self) -> Style {
+        self.style((148, 163, 184), Color::DarkGray)
+    }
+
+    pub fn empty_bar(self) -> Style {
+        self.style((51, 65, 85), Color::DarkGray)
+    }
+
+    pub fn warning(self) -> Style {
+        self.style((251, 191, 36), Color::Yellow)
+    }
+
+    pub fn error(self) -> Style {
+        self.style((248, 113, 113), Color::Red)
+    }
+
+    fn style(self, rgb: (u8, u8, u8), named: Color) -> Style {
+        match self.mode {
+            ColorMode::TrueColor => Style::default().fg(Color::Rgb(rgb.0, rgb.1, rgb.2)),
+            ColorMode::Named => Style::default().fg(named),
+            ColorMode::None => Style::default(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::style::Color;
+
+    #[test]
+    fn quota_health_boundaries_are_exact() {
+        assert_eq!(QuotaHealth::from_remaining(100.0), QuotaHealth::Healthy);
+        assert_eq!(QuotaHealth::from_remaining(75.0), QuotaHealth::Healthy);
+        assert_eq!(QuotaHealth::from_remaining(74.0), QuotaHealth::Moderate);
+        assert_eq!(QuotaHealth::from_remaining(40.0), QuotaHealth::Moderate);
+        assert_eq!(QuotaHealth::from_remaining(39.0), QuotaHealth::Low);
+        assert_eq!(QuotaHealth::from_remaining(15.0), QuotaHealth::Low);
+        assert_eq!(QuotaHealth::from_remaining(14.0), QuotaHealth::Critical);
+        assert_eq!(QuotaHealth::from_remaining(0.0), QuotaHealth::Critical);
+    }
+
+    #[test]
+    fn provider_accents_are_distinct_in_true_color_mode() {
+        let theme = Theme::new(ColorMode::TrueColor);
+
+        assert_eq!(
+            theme.provider_border(ProviderId::Codex).fg,
+            Some(Color::Rgb(56, 189, 248))
+        );
+        assert_eq!(
+            theme.provider_border(ProviderId::OpenCode).fg,
+            Some(Color::Rgb(45, 212, 191))
+        );
+        assert_eq!(
+            theme.provider_border(ProviderId::Antigravity).fg,
+            Some(Color::Rgb(192, 132, 252))
+        );
+    }
+
+    #[test]
+    fn no_color_always_wins_capability_detection() {
+        assert_eq!(
+            ColorMode::detect_from(true, Some("truecolor"), true),
+            ColorMode::None
+        );
+    }
+
+    #[test]
+    fn true_color_is_selected_for_known_true_color_environment() {
+        assert_eq!(
+            ColorMode::detect_from(false, Some("24bit"), false),
+            ColorMode::TrueColor
+        );
+        assert_eq!(
+            ColorMode::detect_from(false, None, true),
+            ColorMode::TrueColor
+        );
+    }
+
+    #[test]
+    fn unknown_environment_uses_named_color_fallback() {
+        assert_eq!(ColorMode::detect_from(false, None, false), ColorMode::Named);
+    }
+}

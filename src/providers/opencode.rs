@@ -44,19 +44,17 @@ impl OpenCodeProvider {
     }
 
     async fn load_auth(&self) -> Result<OpenCodeAuth, ProviderError> {
-        if let Ok(input) = tokio::fs::read_to_string(&self.auth_path).await {
-            if let Ok(auth) = parse_auth(&input) {
-                return Ok(auth);
-            }
+        if let Ok(input) = tokio::fs::read_to_string(&self.auth_path).await
+            && let Ok(auth) = parse_auth(&input)
+        {
+            return Ok(auth);
         }
 
-        if let Some(parent) = self.auth_path.parent() {
-            let account_path = parent.join("account.json");
-            if let Ok(input) = tokio::fs::read_to_string(&account_path).await {
-                if let Ok(auth) = parse_auth(&input) {
-                    return Ok(auth);
-                }
-            }
+        if let Some(parent) = self.auth_path.parent()
+            && let Ok(input) = tokio::fs::read_to_string(parent.join("account.json")).await
+            && let Ok(auth) = parse_auth(&input)
+        {
+            return Ok(auth);
         }
 
         Err(ProviderError::CredentialsNotFound)
@@ -151,53 +149,54 @@ pub fn parse_auth(input: &str) -> Result<OpenCodeAuth, ProviderError> {
     Err(ProviderError::CredentialsNotFound)
 }
 
+fn valid_key(s: &str) -> Option<String> {
+    if !s.is_empty() {
+        Some(s.to_string())
+    } else {
+        None
+    }
+}
+
+fn extract_from_val(val: &Value) -> Option<String> {
+    val.get("key")
+        .and_then(Value::as_str)
+        .and_then(valid_key)
+        .or_else(|| {
+            val.get("apiKey")
+                .and_then(Value::as_str)
+                .and_then(valid_key)
+        })
+        .or_else(|| val.as_str().and_then(valid_key))
+}
+
 fn extract_key(value: &Value) -> Option<String> {
     match value {
         Value::Object(map) => {
             let candidates = ["opencode-go", "opencode", "opencode_go", "zen", "go"];
             for candidate in candidates {
-                if let Some(entry) = map.get(candidate) {
-                    if let Some(key) = entry.get("key").and_then(Value::as_str) {
-                        if !key.is_empty() {
-                            return Some(key.to_string());
-                        }
-                    }
-                    if let Some(key) = entry.get("apiKey").and_then(Value::as_str) {
-                        if !key.is_empty() {
-                            return Some(key.to_string());
-                        }
-                    }
-                    if let Some(key) = entry.as_str() {
-                        if !key.is_empty() {
-                            return Some(key.to_string());
-                        }
-                    }
+                if let Some(entry) = map.get(candidate)
+                    && let Some(found) = extract_from_val(entry)
+                {
+                    return Some(found);
                 }
             }
 
-            if let Some(key) = map.get("key").and_then(Value::as_str) {
-                if !key.is_empty() {
-                    return Some(key.to_string());
-                }
+            if let Some(found) = map.get("key").and_then(Value::as_str).and_then(valid_key) {
+                return Some(found);
             }
-            if let Some(key) = map.get("apiKey").and_then(Value::as_str) {
-                if !key.is_empty() {
-                    return Some(key.to_string());
-                }
+            if let Some(found) = map
+                .get("apiKey")
+                .and_then(Value::as_str)
+                .and_then(valid_key)
+            {
+                return Some(found);
             }
 
             for (prop_name, prop_val) in map {
-                if prop_name.contains("opencode") || prop_name.contains("zen") {
-                    if let Some(key) = prop_val.get("key").and_then(Value::as_str) {
-                        if !key.is_empty() {
-                            return Some(key.to_string());
-                        }
-                    }
-                    if let Some(key) = prop_val.get("apiKey").and_then(Value::as_str) {
-                        if !key.is_empty() {
-                            return Some(key.to_string());
-                        }
-                    }
+                if (prop_name.contains("opencode") || prop_name.contains("zen"))
+                    && let Some(found) = extract_from_val(prop_val)
+                {
+                    return Some(found);
                 }
                 if let Some(found) = extract_key(prop_val) {
                     return Some(found);
