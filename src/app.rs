@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::{
     model::{ProviderId, ProviderSnapshot},
     providers::ProviderError,
+    updater::{AvailableUpdate, UpdateCheckResult, UpdateError},
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -12,6 +13,34 @@ pub enum DisplayState {
     Ready,
     Stale(ProviderError),
     Unavailable(ProviderError),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UpdateState {
+    Checking,
+    UpToDate,
+    Available(AvailableUpdate),
+    Dismissed,
+    Failed(UpdateError),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UpdateAction {
+    UpdateNow,
+    ViewReleaseNotes,
+    RemindLater,
+}
+
+impl UpdateAction {
+    pub const ALL: [Self; 3] = [Self::UpdateNow, Self::ViewReleaseNotes, Self::RemindLater];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::UpdateNow => "Update now",
+            Self::ViewReleaseNotes => "View release notes",
+            Self::RemindLater => "Remind later",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -38,6 +67,10 @@ pub struct App {
     providers: HashMap<ProviderId, ProviderState>,
     focused_index: usize,
     collapsed: [bool; ProviderId::ALL.len()],
+    update_state: UpdateState,
+    update_check_in_flight: bool,
+    update_modal_open: bool,
+    selected_update_action: usize,
 }
 
 impl App {
@@ -51,6 +84,10 @@ impl App {
             providers,
             focused_index: 0,
             collapsed: [false; ProviderId::ALL.len()],
+            update_state: UpdateState::Checking,
+            update_check_in_flight: false,
+            update_modal_open: false,
+            selected_update_action: 0,
         }
     }
 
@@ -141,6 +178,81 @@ impl App {
             false
         }
     }
+
+    pub fn update_state(&self) -> &UpdateState {
+        &self.update_state
+    }
+
+    pub fn available_update(&self) -> Option<&AvailableUpdate> {
+        match &self.update_state {
+            UpdateState::Available(update) => Some(update),
+            _ => None,
+        }
+    }
+
+    pub fn request_update_check(&mut self) -> bool {
+        if self.update_check_in_flight || self.update_state == UpdateState::Dismissed {
+            return false;
+        }
+
+        self.update_check_in_flight = true;
+        if !matches!(self.update_state, UpdateState::Available(_)) {
+            self.update_state = UpdateState::Checking;
+        }
+        true
+    }
+
+    pub fn finish_update_check(&mut self, result: UpdateCheckResult) {
+        self.update_check_in_flight = false;
+
+        if self.update_state == UpdateState::Dismissed {
+            return;
+        }
+
+        self.update_state = match result {
+            Ok(Some(update)) => UpdateState::Available(update),
+            Ok(None) => UpdateState::UpToDate,
+            Err(_) if matches!(self.update_state, UpdateState::Available(_)) => return,
+            Err(error) => UpdateState::Failed(error),
+        };
+
+        if !matches!(self.update_state, UpdateState::Available(_)) {
+            self.update_modal_open = false;
+        }
+    }
+
+    pub fn open_update_modal(&mut self) {
+        if matches!(self.update_state, UpdateState::Available(_)) {
+            self.update_modal_open = true;
+            self.selected_update_action = 0;
+        }
+    }
+
+    pub fn close_update_modal(&mut self) {
+        self.update_modal_open = false;
+    }
+
+    pub fn is_update_modal_open(&self) -> bool {
+        self.update_modal_open
+    }
+
+    pub fn selected_update_action(&self) -> UpdateAction {
+        UpdateAction::ALL[self.selected_update_action]
+    }
+
+    pub fn next_update_action(&mut self) {
+        self.selected_update_action = (self.selected_update_action + 1) % UpdateAction::ALL.len();
+    }
+
+    pub fn previous_update_action(&mut self) {
+        self.selected_update_action =
+            (self.selected_update_action + UpdateAction::ALL.len() - 1) % UpdateAction::ALL.len();
+    }
+
+    pub fn dismiss_update(&mut self) {
+        self.update_state = UpdateState::Dismissed;
+        self.update_modal_open = false;
+    }
 }
 
 fn provider_index(id: ProviderId) -> usize {
@@ -160,6 +272,8 @@ impl Default for App {
 mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
+    use semver::Version;
+    use url::Url;
 
     fn snapshot(provider: ProviderId) -> ProviderSnapshot {
         ProviderSnapshot {
@@ -168,6 +282,16 @@ mod tests {
             quotas: Vec::new(),
             stats: Vec::new(),
             fetched_at: Utc.timestamp_opt(1_788_000_000, 0).single().unwrap(),
+        }
+    }
+
+    fn available_update(version: &str) -> AvailableUpdate {
+        AvailableUpdate {
+            version: Version::parse(version).unwrap(),
+            release_url: Url::parse(
+                "https://github.com/Morfusee/subtracker-cli/releases/tag/v0.3.0",
+            )
+            .unwrap(),
         }
     }
 
@@ -252,5 +376,48 @@ mod tests {
         assert!(app.is_collapsed(ProviderId::Codex));
         assert!(app.is_collapsed(ProviderId::OpenCode));
         assert!(!app.is_collapsed(ProviderId::Antigravity));
+    }
+
+    #[test]
+    fn update_checks_are_coalesced_and_failed_rechecks_preserve_availability() {
+        let mut app = App::new();
+        assert!(app.request_update_check());
+        assert!(!app.request_update_check());
+        app.finish_update_check(Ok(Some(available_update("0.3.0"))));
+        assert!(matches!(app.update_state(), UpdateState::Available(_)));
+        assert!(app.request_update_check());
+        app.finish_update_check(Err(UpdateError::Network));
+        assert!(matches!(app.update_state(), UpdateState::Available(_)));
+    }
+
+    #[test]
+    fn modal_opens_only_for_available_updates_and_navigation_wraps() {
+        let mut app = App::new();
+        app.open_update_modal();
+        assert!(!app.is_update_modal_open());
+        app.finish_update_check(Ok(Some(available_update("0.3.0"))));
+        app.open_update_modal();
+        assert!(app.is_update_modal_open());
+        assert_eq!(app.selected_update_action(), UpdateAction::UpdateNow);
+        app.previous_update_action();
+        assert_eq!(app.selected_update_action(), UpdateAction::RemindLater);
+        app.next_update_action();
+        assert_eq!(app.selected_update_action(), UpdateAction::UpdateNow);
+    }
+
+    #[test]
+    fn closing_does_not_dismiss_but_remind_later_does() {
+        let mut app = App::new();
+        app.finish_update_check(Ok(Some(available_update("0.3.0"))));
+        app.open_update_modal();
+        app.close_update_modal();
+        assert!(app.available_update().is_some());
+        app.open_update_modal();
+        app.dismiss_update();
+        assert_eq!(app.update_state(), &UpdateState::Dismissed);
+        assert!(!app.is_update_modal_open());
+        assert!(!app.request_update_check());
+        app.finish_update_check(Ok(Some(available_update("0.4.0"))));
+        assert_eq!(app.update_state(), &UpdateState::Dismissed);
     }
 }
