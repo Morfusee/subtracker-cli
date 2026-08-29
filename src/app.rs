@@ -36,6 +36,8 @@ impl ProviderState {
 #[derive(Debug)]
 pub struct App {
     providers: HashMap<ProviderId, ProviderState>,
+    focused_index: usize,
+    collapsed: [bool; ProviderId::ALL.len()],
 }
 
 impl App {
@@ -45,7 +47,36 @@ impl App {
             .map(|provider| (provider, ProviderState::new()))
             .collect();
 
-        Self { providers }
+        Self {
+            providers,
+            focused_index: 0,
+            collapsed: [false; ProviderId::ALL.len()],
+        }
+    }
+
+    pub fn focused_provider(&self) -> ProviderId {
+        ProviderId::ALL[self.focused_index]
+    }
+
+    pub fn is_focused(&self, id: ProviderId) -> bool {
+        self.focused_provider() == id
+    }
+
+    pub fn is_collapsed(&self, id: ProviderId) -> bool {
+        self.collapsed[provider_index(id)]
+    }
+
+    pub fn next_provider(&mut self) {
+        self.focused_index = (self.focused_index + 1) % ProviderId::ALL.len();
+    }
+
+    pub fn prev_provider(&mut self) {
+        self.focused_index =
+            (self.focused_index + ProviderId::ALL.len() - 1) % ProviderId::ALL.len();
+    }
+
+    pub fn toggle_focused_collapse(&mut self) {
+        self.collapsed[self.focused_index] = !self.collapsed[self.focused_index];
     }
 
     pub fn provider(&self, id: ProviderId) -> &ProviderState {
@@ -110,6 +141,13 @@ impl App {
             false
         }
     }
+}
+
+fn provider_index(id: ProviderId) -> usize {
+    ProviderId::ALL
+        .iter()
+        .position(|candidate| *candidate == id)
+        .expect("provider id belongs to ProviderId::ALL")
 }
 
 impl Default for App {
@@ -184,5 +222,35 @@ mod tests {
             app.provider(ProviderId::OpenCode).display,
             DisplayState::Ready
         );
+    }
+
+    #[test]
+    fn provider_focus_starts_on_codex_and_wraps_in_both_directions() {
+        let mut app = App::new();
+
+        assert_eq!(app.focused_provider(), ProviderId::Codex);
+
+        app.prev_provider();
+        assert_eq!(app.focused_provider(), ProviderId::Antigravity);
+
+        app.next_provider();
+        assert_eq!(app.focused_provider(), ProviderId::Codex);
+        app.next_provider();
+        assert_eq!(app.focused_provider(), ProviderId::OpenCode);
+    }
+
+    #[test]
+    fn collapse_flags_are_independent_and_toggle_only_the_focused_provider() {
+        let mut app = App::new();
+
+        app.toggle_focused_collapse();
+        assert!(app.is_collapsed(ProviderId::Codex));
+        assert!(!app.is_collapsed(ProviderId::OpenCode));
+
+        app.next_provider();
+        app.toggle_focused_collapse();
+        assert!(app.is_collapsed(ProviderId::Codex));
+        assert!(app.is_collapsed(ProviderId::OpenCode));
+        assert!(!app.is_collapsed(ProviderId::Antigravity));
     }
 }
