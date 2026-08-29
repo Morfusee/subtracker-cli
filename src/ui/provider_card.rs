@@ -809,16 +809,26 @@ mod tests {
         let mut app = App::new();
         let theme = Theme::new(ColorMode::None);
 
-        let loading =
-            status_title(ProviderId::Codex, app.provider(ProviderId::Codex), theme, now, 0)
-                .expect("loading status must be visible on a collapsed card");
+        let loading = status_title(
+            ProviderId::Codex,
+            app.provider(ProviderId::Codex),
+            theme,
+            now,
+            0,
+        )
+        .expect("loading status must be visible on a collapsed card");
         assert!(plain(&[loading]).contains("loading"));
 
         app.request_refresh();
         app.finish_refresh(ProviderId::Codex, Err(ProviderError::NotAuthenticated));
-        let unavailable =
-            status_title(ProviderId::Codex, app.provider(ProviderId::Codex), theme, now, 0)
-                .expect("unavailable status must be visible on a collapsed card");
+        let unavailable = status_title(
+            ProviderId::Codex,
+            app.provider(ProviderId::Codex),
+            theme,
+            now,
+            0,
+        )
+        .expect("unavailable status must be visible on a collapsed card");
         assert!(plain(&[unavailable]).contains("Not authenticated"));
     }
 }

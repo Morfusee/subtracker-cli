@@ -56,10 +56,22 @@ The first candidate whose content width and complete required height fit the ter
 ### Footer / header
 
 - Header (STC banner): Shown in `Normal` and `Compact` densities (heights `>= 24`); hidden in `Spaced` and `Dense` (narrow heights `< 24`) to enforce card spacing.
-- Footer strings:
-  - `W`: `[r] refresh        ◷ auto 60s        [q] quit        [Ctrl+C] exit`
-  - `C`: `[r] refresh   60s auto   [q] quit   [Ctrl+C] exit`
-  - `N` (also used in `Dense`): `[r] refresh   [q] quit   [^C] exit`
+- Footer bindings and responsive strings are defined under `Keyboard interaction and collapsed cards` below.
+
+### Keyboard interaction and collapsed cards
+
+- Codex is focused at startup.
+- `j`/`Down` and `k`/`Up` move focus with wraparound.
+- `Space`/`Enter` toggle the focused card.
+- `▸` marks focus, `[-]` marks expanded cards, and `[+]` marks collapsed cards.
+- A collapsed card is two rows high: provider title on the top border and status on the bottom border.
+- Collapse hides body data by explicit user choice; responsive density alone never omits data.
+
+Footer strings:
+
+- `W`: `[j/k/↑/↓] select   [Space/Enter] collapse   [r] refresh   [q] quit`
+- `C`: `[j/k/↑/↓] select  [Space/Enter] toggle  [r] refresh  [q] quit`
+- `N`: `[j/k] move  [Space] toggle  [r] refresh  [q] quit`
 
 ## Invariants for future agents
 

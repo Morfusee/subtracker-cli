@@ -224,16 +224,12 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
         let focus_marker = if focused { "▸ " } else { "  " };
         let collapse_marker = if collapsed { "[+]" } else { "[-]" };
         let title_style = if focused {
-            theme
-                .provider_title(*id)
-                .add_modifier(Modifier::REVERSED)
+            theme.provider_title(*id).add_modifier(Modifier::REVERSED)
         } else {
             theme.provider_title(*id)
         };
         let border_style = if focused {
-            theme
-                .provider_border(*id)
-                .add_modifier(Modifier::BOLD)
+            theme.provider_border(*id).add_modifier(Modifier::BOLD)
         } else {
             theme.provider_border(*id)
         };
