@@ -117,31 +117,13 @@ fn quota_lines(
         };
 
         match mode {
-            LayoutMode::Wide | LayoutMode::Compact => {
-                let label_width = match mode {
-                    LayoutMode::Wide => 20,
-                    LayoutMode::Compact => 18,
-                    LayoutMode::Narrow => unreachable!(),
-                };
-                let bar_width = match mode {
-                    LayoutMode::Wide => 20,
-                    LayoutMode::Compact => 12,
-                    LayoutMode::Narrow => unreachable!(),
-                };
-
+            LayoutMode::Wide => {
                 let mut spans = vec![
                     Span::raw("    "),
-                    Span::styled(
-                        format!("{:<width$}", quota.label, width = label_width),
-                        theme.primary(),
-                    ),
+                    Span::styled(format!("{:<20}", quota.label), theme.primary()),
                 ];
 
-                spans.extend(QuotaBar::new(remaining).spans(bar_width, theme));
-
-                if mode == LayoutMode::Wide {
-                    spans.push(Span::styled("  remaining", theme.secondary()));
-                }
+                spans.extend(QuotaBar::new(remaining).spans(20, theme));
 
                 if let Some(reset) = quota.resets_at {
                     spans.push(Span::styled(
@@ -151,6 +133,23 @@ fn quota_lines(
                 }
 
                 lines.push(Line::from(spans));
+            }
+            LayoutMode::Compact => {
+                let mut spans = vec![Span::styled(
+                    format!("{:<16}", quota.label),
+                    theme.primary(),
+                )];
+
+                spans.extend(QuotaBar::new(remaining).spans(12, theme));
+
+                if let Some(reset) = quota.resets_at {
+                    spans.push(Span::styled(
+                        format!("   ◷ {}", format_reset(reset, now)),
+                        theme.secondary(),
+                    ));
+                }
+
+                lines.push(Line::from(spans).alignment(Alignment::Center));
             }
             LayoutMode::Narrow => {
                 lines.push(Line::from(vec![
@@ -192,22 +191,29 @@ fn open_code_lines(
     let input = stat_value(snapshot, "Input");
     let output = stat_value(snapshot, "Output");
 
-    if mode == LayoutMode::Wide {
-        vec![
+    match mode {
+        LayoutMode::Wide => vec![
             Line::from(""), // Top interior padding
             stat_grid_line("Sessions", &sessions, "Input", &input, theme),
             stat_grid_line("Total Cost", &total_cost, "Output", &output, theme),
             Line::from(""), // Bottom interior padding
-        ]
-    } else {
-        vec![
+        ],
+        LayoutMode::Compact => vec![
+            Line::from(""), // Top interior padding
+            stat_line_centered("Sessions", &sessions, theme),
+            stat_line_centered("Total Cost", &total_cost, theme),
+            stat_line_centered("Input", &input, theme),
+            stat_line_centered("Output", &output, theme),
+            Line::from(""), // Bottom interior padding
+        ],
+        LayoutMode::Narrow => vec![
             Line::from(""), // Top interior padding
             stat_line("Sessions", &sessions, theme),
             stat_line("Total Cost", &total_cost, theme),
             stat_line("Input", &input, theme),
             stat_line("Output", &output, theme),
             Line::from(""), // Bottom interior padding
-        ]
+        ],
     }
 }
 
@@ -226,6 +232,14 @@ fn stat_line(label: &str, value: &str, theme: Theme) -> Line<'static> {
         Span::styled(format!("{label:<12}"), theme.secondary()),
         Span::styled(value.to_owned(), theme.primary()),
     ])
+}
+
+fn stat_line_centered(label: &str, value: &str, theme: Theme) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!("{label:<14}"), theme.secondary()),
+        Span::styled(value.to_owned(), theme.primary()),
+    ])
+    .alignment(Alignment::Center)
 }
 
 fn stat_grid_line(
@@ -399,7 +413,6 @@ mod tests {
 
         assert!(text.contains("5 hour"));
         assert!(text.contains("65%"));
-        assert!(text.contains("remaining"));
         assert!(text.contains("◷ 1h 0m"));
 
         let status = status_title(

@@ -424,7 +424,6 @@ mod tests {
         assert!(text.contains("▓▓▓▓"));
         assert!(text.contains("65%"));
         assert!(text.contains("312.3M tokens"));
-        assert!(text.contains("remaining"));
         assert!(text.contains("[r] refresh"));
         assert!(text.contains("auto 60s"));
         assert!(text.contains("[q] quit"));
