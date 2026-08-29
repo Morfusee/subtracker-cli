@@ -281,6 +281,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
     }
 
     if app.is_update_modal_open() {
+        darken_backdrop(frame, theme);
         render_update_modal(frame, app, theme);
     }
 }
@@ -387,6 +388,11 @@ fn centered_rect(area: Rect, max_width: u16, max_height: u16) -> Rect {
         width,
         height,
     )
+}
+
+fn darken_backdrop(frame: &mut Frame, theme: Theme) {
+    let area = frame.area();
+    frame.buffer_mut().set_style(area, theme.backdrop());
 }
 
 fn render_update_modal(frame: &mut Frame, app: &App, theme: Theme) {
@@ -640,6 +646,28 @@ mod tests {
         assert_eq!(
             centered_rect(Rect::new(0, 0, 50, 15), 56, 11),
             Rect::new(0, 2, 50, 11)
+        );
+    }
+
+    #[test]
+    fn update_modal_darkens_only_the_backdrop() {
+        let now = Utc.timestamp_opt(1_788_000_000, 0).single().unwrap();
+        let mut app = with_update(ready_app(now));
+        app.open_update_modal();
+        let backend = TestBackend::new(120, 50);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| render(frame, &app, now, 0, Theme::new(ColorMode::TrueColor)))
+            .unwrap();
+
+        let modal = centered_rect(Rect::new(0, 0, 120, 50), 56, 11);
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 0)].fg, ratatui::style::Color::Rgb(55, 65, 78));
+        assert_eq!(buffer[(0, 0)].bg, ratatui::style::Color::Rgb(8, 12, 18));
+        assert_ne!(
+            buffer[(modal.x, modal.y)].fg,
+            ratatui::style::Color::Rgb(55, 65, 78)
         );
     }
 

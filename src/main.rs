@@ -4,8 +4,14 @@ use chrono::Utc;
 use crossterm::event::{Event, EventStream};
 use futures_util::StreamExt;
 use ratatui::{Terminal, backend::CrosstermBackend};
+#[cfg(debug_assertions)]
+use semver::Version;
 use tokio::time::{Instant, MissedTickBehavior, interval_at};
+#[cfg(debug_assertions)]
+use url::Url;
 
+#[cfg(debug_assertions)]
+use subtracker::updater::AvailableUpdate;
 use subtracker::{
     app::UpdateAction,
     event::{Action, action_for_key},
@@ -47,6 +53,11 @@ async fn run_tui() -> Result<RunOutcome, Box<dyn Error>> {
         RuntimeController::new(providers, update_checker);
     let mut events = EventStream::new();
 
+    #[cfg(debug_assertions)]
+    let force_update = force_update_requested(std::env::args());
+    #[cfg(not(debug_assertions))]
+    let force_update = false;
+
     let refresh_period = Duration::from_secs(60);
     let mut refresh_timer = interval_at(Instant::now() + refresh_period, refresh_period);
     refresh_timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -63,7 +74,12 @@ async fn run_tui() -> Result<RunOutcome, Box<dyn Error>> {
     let mut spinner_frame = 0u8;
 
     runtime.request_refresh();
-    runtime.request_update_check();
+    if force_update {
+        #[cfg(debug_assertions)]
+        runtime.apply_update_check_result(Ok(Some(forced_update())));
+    } else {
+        runtime.request_update_check();
+    }
 
     let outcome = loop {
         terminal.draw(|frame| {
@@ -117,7 +133,7 @@ async fn run_tui() -> Result<RunOutcome, Box<dyn Error>> {
                 spinner_frame = spinner_frame.wrapping_add(1);
             }
 
-            _ = update_timer.tick() => {
+            _ = update_timer.tick(), if !force_update => {
                 runtime.request_update_check();
             }
 
@@ -138,6 +154,29 @@ async fn run_tui() -> Result<RunOutcome, Box<dyn Error>> {
     Ok(outcome)
 }
 
+#[cfg(debug_assertions)]
+fn force_update_requested(args: impl IntoIterator<Item = String>) -> bool {
+    args.into_iter().any(|arg| arg == "--force-update")
+}
+
+#[cfg(debug_assertions)]
+fn forced_update() -> AvailableUpdate {
+    let mut version =
+        Version::parse(env!("CARGO_PKG_VERSION")).expect("package version must be valid semver");
+    version.patch = version
+        .patch
+        .checked_add(1)
+        .expect("patch version overflow");
+    version.pre = semver::Prerelease::EMPTY;
+    version.build = semver::BuildMetadata::EMPTY;
+
+    AvailableUpdate {
+        version,
+        release_url: Url::parse("https://github.com/Morfusee/subtracker-cli/releases/latest")
+            .expect("release URL must be valid"),
+    }
+}
+
 fn production_providers() -> Result<ProviderRegistry, Box<dyn Error>> {
     let process_runner = Arc::new(SystemProcessRunner);
     let timeout = Duration::from_secs(15);
@@ -156,4 +195,30 @@ fn production_providers() -> Result<ProviderRegistry, Box<dyn Error>> {
     .collect();
 
     Ok(providers)
+}
+
+#[cfg(all(test, debug_assertions))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn force_update_flag_is_explicit() {
+        assert!(force_update_requested([
+            "stc".into(),
+            "--force-update".into()
+        ]));
+        assert!(!force_update_requested(["stc".into()]));
+    }
+
+    #[test]
+    fn forced_update_is_newer_and_links_to_releases() {
+        let update = forced_update();
+        let current = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
+
+        assert!(update.version > current);
+        assert_eq!(
+            update.release_url.as_str(),
+            "https://github.com/Morfusee/subtracker-cli/releases/latest"
+        );
+    }
 }

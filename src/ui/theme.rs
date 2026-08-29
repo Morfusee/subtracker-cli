@@ -117,6 +117,16 @@ impl Theme {
         self.style((215, 110, 115), Color::Red)
     }
 
+    pub fn backdrop(self) -> Style {
+        match self.mode {
+            ColorMode::TrueColor => Style::default()
+                .fg(Color::Rgb(55, 65, 78))
+                .bg(Color::Rgb(8, 12, 18)),
+            ColorMode::Named => Style::default().fg(Color::DarkGray).bg(Color::Black),
+            ColorMode::None => Style::default(),
+        }
+    }
+
     fn style(self, rgb: (u8, u8, u8), named: Color) -> Style {
         match self.mode {
             ColorMode::TrueColor => Style::default().fg(Color::Rgb(rgb.0, rgb.1, rgb.2)),
