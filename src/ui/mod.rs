@@ -46,7 +46,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
     }
 
     let mode = LayoutMode::for_width(area.width);
-    let inner_width = area.width.saturating_sub(2);
+    let inner_width = area.width.saturating_sub(6);
 
     let cards = ProviderId::ALL.map(|id| {
         let lines = provider_card::content_lines(
@@ -102,6 +102,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>, spinner_frame: u
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(theme.provider_border(*id))
+            .padding(ratatui::widgets::Padding::horizontal(2))
             .title(title);
 
         frame.render_widget(
