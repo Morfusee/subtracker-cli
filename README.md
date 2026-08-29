@@ -1,139 +1,173 @@
-# Subtracker
+# Subtracker (`stc`)
 
-Subtracker is a small terminal dashboard for current AI coding-tool usage.
+<p align="center">
+  <a href="https://crates.io/crates/subtracker"><img src="https://img.shields.io/crates/v/subtracker.svg?style=flat-square&color=blue" alt="Crates.io Version"></a>
+  <a href="https://github.com/Morfusee/subtracker-cli/releases"><img src="https://img.shields.io/github/v/release/Morfusee/subtracker-cli?style=flat-square&color=green" alt="GitHub Release"></a>
+  <a href="https://github.com/Morfusee/subtracker-cli/actions"><img src="https://img.shields.io/github/actions/workflow/status/Morfusee/subtracker-cli/ci.yml?branch=main&style=flat-square" alt="CI Status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License: MIT"></a>
+  <a href="https://crates.io/crates/subtracker"><img src="https://img.shields.io/crates/d/subtracker.svg?style=flat-square&color=orange" alt="Crates.io Downloads"></a>
+</p>
 
-Run it as:
-
-```text
-stc
-```
-
-## Providers
-
-### Codex
-
-Subtracker reads the currently authenticated Codex session from:
+<p align="center">
+  <strong>A fast, zero-dependency, responsive terminal dashboard for tracking AI subscription quotas and usage in real-time.</strong>
+</p>
 
 ```text
-~/.codex/auth.json
+  ███████╗████████╗ ██████╗ 
+  ██╔════╝╚══██╔══╝██╔════╝ 
+  ███████╗   ██║   ██║      
+  ╚════██║   ██║   ██║      
+  ███████║   ██║   ╚██████╗ 
+  ╚══════╝   ╚═╝    ╚═════╝ 
+
+╭──  CODEX  ───────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│      5 hour             │▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░│   65%   ◷ 1h 0m               │
+│                                                                              │
+│      Weekly             │▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░│   79%   ◷ 6d 0h               │
+│                                                                              │
+╰──────────────────────────────────────────────────────  ● updated just now  ──╯
+╭──  OPENCODE  ────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│      Sessions    2,277             │  Input     312.3M tokens                │
+│      Total Cost  $120.50           │  Output    15.3M tokens                 │
+│                                                                              │
+╰──────────────────────────────────────────────────────  ● updated just now  ──╯
+╭──  ANTIGRAVITY  ─────────────────────────────────────────────────────────────╮
+│                                                                              │
+│      Gemini 5 hour      │▓▓▓▓▓▓▓▓▓░░░░░░░░░░░│   45%   ◷ 3m                  │
+│                                                                              │
+│      Gemini weekly      │▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░│   90%   ◷ 6d 0h               │
+│                                                                              │
+│      Claude/GPT 5 hour  │▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│  100%   ◷ 5h 0m               │
+│                                                                              │
+│      Claude/GPT weekly  │▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│  100%   ◷ 7d 0h               │
+│                                                                              │
+╰──────────────────────────────────────────────────────  ● updated just now  ──╯
+ [r] refresh               ◷ auto 60s               [q] quit            [Ctrl+C] exit
 ```
 
-and queries the first-party ChatGPT Codex usage backend.
+---
 
-Subtracker does not refresh OAuth credentials. If the Codex session has expired:
+## ✨ Features
 
-```text
-codex login
-```
+- ⚡ **Zero External Dependencies** — Single standalone native binary compiled in Rust with Ratatui.
+- 🎯 **Multi-Provider Support** — Monitors quotas and rate limits across:
+  - **Codex (ChatGPT / GitHub Copilot)**: 5-hour rolling limit, weekly limit, and reset countdowns.
+  - **OpenCode**: Session count, cumulative cost ($), input tokens, and output tokens.
+  - **Google Antigravity**: Gemini and Claude/GPT 5-hour and weekly quotas.
+- 📐 **Adaptive Responsive Scaling** — Seamlessly adjusts layout density across Wide (desktop), Compact, and Narrow (split-pane/mobile) terminal windows with zero clipping.
+- 🔄 **Live Background Polling** — Automatically refreshes usage every 60 seconds with live spinners and relative timestamps (`● updated just now`).
+- 🎨 **TrueColor & NO_COLOR Support** — Clean visual aesthetics with semantic health colors and provider accents; respects the `NO_COLOR` standard.
 
-The `wham/usage` backend is a first-party but undocumented integration point and may change. The Codex adapter is isolated so it can be replaced by the Codex app-server interface later.
+---
 
-### OpenCode
+## 📦 Installation
 
-Subtracker reads your OpenCode API credentials from:
+### Option 1: Via Cargo (crates.io) — Recommended
 
-```text
-~/.local/share/opencode/auth.json
-```
-
-and queries the OpenCode Go subscription usage endpoint:
-
-```text
-GET https://opencode.ai/zen/go/v1/usage
-```
-
-Subtracker monitors:
-
-- 5 hour rolling limit
-- Weekly limit
-- Monthly limit
-
-### Antigravity
-
-Antigravity CLI must already be installed and authenticated.
-
-Subtracker invokes:
-
-```text
-agy -p "/usage" --output-format json
-```
-
-It does not read Antigravity OAuth credentials directly.
-
-## Controls
-
-```text
-r       refresh immediately
-q       quit
-Ctrl+C  quit
-```
-
-Providers refresh automatically every 60 seconds.
-
-## Installation
-
-### Via Cargo (crates.io)
+If you have Rust installed, install `subtracker` directly from [crates.io](https://crates.io/crates/subtracker):
 
 ```bash
 cargo install subtracker
 ```
 
-This installs the binary `stc` to your Cargo bin folder (`~/.cargo/bin`), allowing you to run `stc` from any terminal.
+*This compiles and places the `stc` binary into your Cargo bin directory (`~/.cargo/bin`).*
 
-### Direct Download from Releases
+---
 
-Download the precompiled standalone executable (`stc.exe` on Windows or `stc-*.tar.gz` on macOS) matching your platform from [GitHub Releases](https://github.com/Morfusee/subtracker-cli/releases), and place it in a directory on your `PATH`.
+### Option 2: Pre-compiled Binaries (macOS & Windows)
 
-## Build from source
+Download the standalone binary directly from the latest [GitHub Releases](https://github.com/Morfusee/subtracker-cli/releases/latest):
 
-Install the Rust stable toolchain, then:
+#### **macOS (Apple Silicon M1/M2/M3/M4):**
+```bash
+curl -sSL https://github.com/Morfusee/subtracker-cli/releases/latest/download/stc-aarch64-apple-darwin.tar.gz | tar -xz
+sudo mv stc /usr/local/bin/
+```
 
-```text
+#### **macOS (Intel):**
+```bash
+curl -sSL https://github.com/Morfusee/subtracker-cli/releases/latest/download/stc-x86_64-apple-darwin.tar.gz | tar -xz
+sudo mv stc /usr/local/bin/
+```
+
+#### **Windows (PowerShell):**
+Download [`stc.exe`](https://github.com/Morfusee/subtracker-cli/releases/latest/download/stc.exe) and move it to a folder in your `PATH`:
+```powershell
+Invoke-WebRequest -Uri "https://github.com/Morfusee/subtracker-cli/releases/latest/download/stc.exe" -OutFile "$HOME\.cargo\bin\stc.exe"
+```
+
+---
+
+### Option 3: Build from Source
+
+```bash
+git clone https://github.com/Morfusee/subtracker-cli.git
+cd subtracker-cli
 cargo build --release
 ```
 
-The executable is:
+The compiled binary will be located at:
+- **macOS / Linux:** `target/release/stc`
+- **Windows:** `target\release\stc.exe`
 
-```text
-target/release/stc
-```
+---
 
-or on Windows:
+## 🚀 Usage & Keyboard Controls
 
-```text
-target\release\stc.exe
-```
+Launch Subtracker by running:
 
-## Appearance
-
-The TUI uses provider accent colors and semantic quota colors. It keeps the terminal's existing background and requires no Nerd Font.
-
-Subtracker also respects the conventional `NO_COLOR` environment variable:
-
-macOS:
-
-```text
-NO_COLOR=1 stc
-```
-
-Windows PowerShell:
-
-```text
-$env:NO_COLOR = "1"
+```bash
 stc
 ```
 
-Responsive modes — formal phases (see `docs/ui-layout.md`):
+| Key | Action |
+| :--- | :--- |
+| **`r`** | Trigger an immediate manual refresh across all providers |
+| **`q`** | Quit Subtracker and cleanly restore the terminal |
+| **`Ctrl+C`** | Exit immediately |
 
-```text
-P3/W  Wide      >= 100 columns  — desktop, full fidelity (flex-row)
-P2/C  Compact   70–99 columns   — first breakpoint, Grid auto-fit/expand (flex-col per quota, side-by-side when space allows)
-P1/N  Narrow    < 70 columns    — mobile, single-column flex-col
+---
+
+## 🔌 Supported Providers
+
+### 1. Codex
+Subtracker reads your authenticated Codex session from `~/.codex/auth.json` and queries the ChatGPT Codex usage endpoint.
+
+If your session has expired, simply log in again via:
+```bash
+codex login
 ```
 
-Small terminals are never blocked: `render()` clamps `total_required_height` to `area.height` and draws truncated content instead of a "terminal too small" message. `Wide` no longer shows the `remaining` label after its bar (removed 2026-08-29).
+### 2. OpenCode
+Subtracker reads your API credentials from `~/.local/share/opencode/auth.json` (or OS equivalent) and queries the OpenCode Go subscription usage API:
+- Sessions count
+- Total monthly cost
+- Input & Output token counters
 
-## v1 boundaries
+### 3. Antigravity
+Subtracker connects to the local Antigravity CLI via:
+```bash
+agy -p "/usage" --output-format json
+```
 
-Subtracker does not store provider credentials, manage accounts, refresh Codex OAuth, persist usage history, run a daemon, or provide a desktop/tray UI.
+---
 
+## 📐 Layout & Responsive Modes
+
+Subtracker automatically calculates the available terminal geometry and dynamically adjusts layout density:
+
+| Mode | Width | Behavior |
+| :--- | :--- | :--- |
+| **`Wide` (`P3/W`)** | `≥ 100` cols | Full desktop fidelity; side-by-side stats grid and expanded progress bars. |
+| **`Compact` (`P2/C`)** | `70..99` cols | Balanced layout; inline quota metrics and stacked stats. |
+| **`Narrow` (`P1/N`)** | `< 70` cols | Dedicated 2-line layout per quota (`Line 1: label`, `Line 2: bar + reset`) preventing label squishing. |
+
+On height-constrained windows (`< 24` rows), the ASCII header is automatically hidden to ensure all provider cards and spacing remain intact with zero truncation.
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
