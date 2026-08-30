@@ -12,57 +12,24 @@
   <strong>A fast, zero-dependency, responsive terminal dashboard for tracking AI subscription quotas and usage in real-time.</strong>
 </p>
 
-```text
-  ███████╗████████╗ ██████╗ 
-  ██╔════╝╚══██╔══╝██╔════╝ 
-  ███████╗   ██║   ██║      
-  ╚════██║   ██║   ██║      
-  ███████║   ██║   ╚██████╗ 
-  ╚══════╝   ╚═╝    ╚═════╝ 
-
-╭──  CODEX  ───────────────────────────────────────────────────────────────────╮
-│                                                                              │
-│      5 hour             │▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░│   65%   ◷ 1h 0m               │
-│                                                                              │
-│      Weekly             │▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░│   79%   ◷ 6d 0h               │
-│                                                                              │
-╰──────────────────────────────────────────────────────  ● updated just now  ──╯
-╭──  OPENCODE  ────────────────────────────────────────────────────────────────╮
-│                                                                              │
-│      Sessions    2,277             │  Input     312.3M tokens                │
-│      Total Cost  $120.50           │  Output    15.3M tokens                 │
-│                                                                              │
-╰──────────────────────────────────────────────────────  ● updated just now  ──╯
-╭──  ANTIGRAVITY  ─────────────────────────────────────────────────────────────╮
-│                                                                              │
-│      Gemini 5 hour      │▓▓▓▓▓▓▓▓▓░░░░░░░░░░░│   45%   ◷ 3m                  │
-│                                                                              │
-│      Gemini weekly      │▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░│   90%   ◷ 6d 0h               │
-│                                                                              │
-│      Claude/GPT 5 hour  │▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│  100%   ◷ 5h 0m               │
-│                                                                              │
-│      Claude/GPT weekly  │▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│  100%   ◷ 7d 0h               │
-│                                                                              │
-╰──────────────────────────────────────────────────────  ● updated just now  ──╯
- [r] refresh               ◷ auto 60s               [q] quit            [Ctrl+C] exit
-```
+![Subtracker terminal dashboard](Screenshot%202026-08-30%20233101.png)
 
 ---
 
-## ✨ Features
+## Features
 
-- ⚡ **Zero External Dependencies** — Single standalone native binary compiled in Rust with Ratatui.
-- 🎯 **Multi-Provider Support** — Monitors quotas and rate limits across:
+- **Zero External Dependencies** — Single standalone native binary compiled in Rust with Ratatui.
+- **Multi-Provider Support** — Monitors quotas and rate limits across:
   - **Codex (ChatGPT / GitHub Copilot)**: 5-hour rolling limit, weekly limit, and reset countdowns.
   - **OpenCode**: Session count, cumulative cost ($), input tokens, and output tokens.
   - **Google Antigravity**: Gemini and Claude/GPT 5-hour and weekly quotas.
-- 📐 **Adaptive Responsive Scaling** — Seamlessly adjusts layout density across Wide (desktop), Compact, and Narrow (split-pane/mobile) terminal windows with zero clipping.
-- 🔄 **Live Background Polling** — Automatically refreshes usage every 60 seconds with live spinners and relative timestamps (`● updated just now`).
-- 🎨 **TrueColor & NO_COLOR Support** — Clean visual aesthetics with semantic health colors and provider accents; respects the `NO_COLOR` standard.
+- **Adaptive Responsive Scaling** — Seamlessly adjusts layout density across Wide (desktop), Compact, and Narrow (split-pane/mobile) terminal windows with zero clipping.
+- **Live Background Polling** — Automatically refreshes usage every 60 seconds with live spinners and relative timestamps (`● updated just now`).
+- **TrueColor & NO_COLOR Support** — Clean visual aesthetics with semantic health colors and provider accents; respects the `NO_COLOR` standard.
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### Option 1: Via Cargo (crates.io) — Recommended
 
@@ -114,7 +81,7 @@ The compiled binary will be located at:
 
 ---
 
-## 🚀 Usage & Keyboard Controls
+## Usage & Keyboard Controls
 
 Launch Subtracker by running:
 
@@ -130,7 +97,7 @@ stc
 
 ---
 
-## 🔌 Supported Providers
+## Supported Providers
 
 ### 1. Codex
 Subtracker reads your authenticated Codex session from `~/.codex/auth.json` and queries the ChatGPT Codex usage endpoint.
@@ -154,7 +121,7 @@ agy -p "/usage" --output-format json
 
 ---
 
-## 📐 Layout & Responsive Modes
+## Layout & Responsive Modes
 
 Subtracker automatically calculates the available terminal geometry and dynamically adjusts layout density:
 
@@ -168,6 +135,6 @@ On height-constrained windows (`< 24` rows), the ASCII header is automatically h
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the [MIT License](LICENSE).
